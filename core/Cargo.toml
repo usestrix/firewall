@@ -1,0 +1,33 @@
+[package]
+name = "firewall"
+version = "0.1.0"
+edition = "2021"
+# proxy-test lives under tests/, which cargo would otherwise also claim as an
+# integration test; new tests/*.rs need an explicit [[test]] entry.
+autotests = false
+
+[lib]
+# staticlib/cdylib for UniFFI are built on demand, not on every build:
+#   cargo rustc --lib --crate-type staticlib
+crate-type = ["lib"]
+
+[[bin]]
+name = "proxy-test"
+path = "tests/proxy-test/main.rs"
+
+[[test]]
+name = "forward"
+path = "tests/forward.rs"
+
+[[test]]
+name = "osv"
+path = "tests/osv.rs"
+
+[[test]]
+name = "managers"
+path = "tests/managers.rs"
+
+[dependencies]
+bpaf = "0.9.28"
+rama = { version = "0.4.0", features = ["http-full", "ring", "rustls"] }
+regex = "1.13.1"
