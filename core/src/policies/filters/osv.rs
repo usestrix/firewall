@@ -1,39 +1,46 @@
-use super::registries::Package;
+use super::{Answer, Filter, Verdict};
+use crate::policies::registries::Registry;
+use crate::policies::Package;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::service::client::HttpClientExt;
 use rama::http::{BodyExtractExt, StatusCode};
 
 const URL: &str = "https://api.osv.dev/v1/query";
 
-pub enum Verdict {
-    Clean,
-    Malicious(Vec<String>),
-    Unknown(String),
+pub struct Osv;
+
+impl Filter for Osv {
+    fn name(&self) -> &'static str {
+        "osv"
+    }
+
+    fn allow<'a>(&'a self, registry: &'static Registry, pkg: &'a Package) -> Answer<'a> {
+        Box::pin(async move {
+            let client = EasyHttpWebClient::default();
+            let query = query(registry.osv_name, pkg);
+            let response = match client.post(URL).body(query).send().await {
+                Ok(response) => response,
+                Err(e) => return Verdict::Unknown(e.to_string()),
+            };
+            if response.status() != StatusCode::OK {
+                return Verdict::Unknown(format!("OSV replied {}", response.status()));
+            }
+            let text = match response.try_into_string().await {
+                Ok(text) => text,
+                Err(e) => return Verdict::Unknown(e.to_string()),
+            };
+
+            let hits = scan_mal_ids(&text);
+            if hits.is_empty() {
+                Verdict::Allow
+            } else {
+                Verdict::Deny(format!("is flagged malicious by OSV ({})", hits.join(", ")))
+            }
+        })
+    }
 }
 
-pub async fn check(eco: &str, pkg: &Package) -> Verdict {
-    let client = EasyHttpWebClient::default();
-    let response = match client.post(URL).body(query(eco, pkg)).send().await {
-        Ok(response) => response,
-        Err(e) => return Verdict::Unknown(e.to_string()),
-    };
-    if response.status() != StatusCode::OK {
-        return Verdict::Unknown(format!("OSV replied {}", response.status()));
-    }
-    let text = match response.try_into_string().await {
-        Ok(text) => text,
-        Err(e) => return Verdict::Unknown(e.to_string()),
-    };
-
-    let hits = scan_mal_ids(&text);
-    if hits.is_empty() {
-        Verdict::Clean
-    } else {
-        Verdict::Malicious(hits)
-    }
-}
-
-pub fn query(eco: &str, pkg: &Package) -> String {
+fn query(eco: &str, pkg: &Package) -> String {
     match &pkg.version {
         Some(v) => format!(
             r#"{{"package":{{"name":"{}","ecosystem":"{}"}},"version":"{}"}}"#,
@@ -48,7 +55,7 @@ pub fn query(eco: &str, pkg: &Package) -> String {
 }
 
 /// MAL- appears only as an advisory id, so a substring scan avoids parsing the JSON.
-pub fn scan_mal_ids(text: &str) -> Vec<String> {
+fn scan_mal_ids(text: &str) -> Vec<String> {
     let mut hits = Vec::new();
     let mut rest = text;
     while let Some(i) = rest.find("\"MAL-") {

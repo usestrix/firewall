@@ -1,10 +1,10 @@
-pub mod osv;
+mod filters;
 pub mod registries;
 
 pub use registries::Package;
 
 use crate::Config;
-use osv::Verdict;
+use filters::{consult, Verdict};
 
 pub struct Target {
     pub eco: &'static str,
@@ -14,19 +14,14 @@ pub struct Target {
 
 pub enum Check {
     NoPackage,
-    Clean(Package),
-    Unverified(Package, String),
-}
-
-pub enum Reason {
-    Malicious(Vec<String>),
-    Unverified(String),
+    Allowed(Package),
+    Unverified { pkg: Package, filter: &'static str, error: String },
 }
 
 pub enum Decision {
     Unroutable,
     Allow { target: Target, check: Check },
-    Block { eco: &'static str, pkg: Package, reason: Reason },
+    Block { eco: &'static str, pkg: Package, filter: &'static str, reason: String },
 }
 
 pub async fn decide(request_target: &str, cfg: &Config) -> Decision {
@@ -42,15 +37,20 @@ pub async fn decide(request_target: &str, cfg: &Config) -> Decision {
         rewrite: resolved.rewrite.map(|(from, to)| (from.to_string(), cfg.local_url(to))),
     };
 
+    let eco = registry.eco;
     let check = match resolved.pkg {
         None => Check::NoPackage,
-        Some(pkg) => match osv::check(registry.osv, &pkg).await {
-            Verdict::Clean => Check::Clean(pkg),
-            Verdict::Malicious(ids) => return block(registry, pkg, Reason::Malicious(ids)),
-            Verdict::Unknown(e) if !cfg.fail_open => {
-                return block(registry, pkg, Reason::Unverified(e))
+        Some(pkg) => match consult(registry, &pkg).await {
+            None => Check::Allowed(pkg),
+            Some((filter, Verdict::Deny(reason))) => {
+                return Decision::Block { eco, pkg, filter, reason }
             }
-            Verdict::Unknown(e) => Check::Unverified(pkg, e),
+            Some((filter, Verdict::Unknown(e))) if !cfg.fail_open => {
+                let reason = format!("could not be checked by {filter} ({e})");
+                return Decision::Block { eco, pkg, filter, reason };
+            }
+            Some((filter, Verdict::Unknown(error))) => Check::Unverified { pkg, filter, error },
+            Some((_, Verdict::Allow)) => Check::Allowed(pkg),
         },
     };
 
@@ -61,17 +61,10 @@ pub async fn decide(request_target: &str, cfg: &Config) -> Decision {
 pub async fn screen(url: &str) -> Option<String> {
     let (registry, rest) = registries::match_upstream(url)?;
     let pkg = registries::resolve(registry, rest).pkg?;
-    match osv::check(registry.osv, &pkg).await {
-        Verdict::Malicious(ids) => Some(format!(
-            "{} {} is flagged malicious ({})",
-            registry.eco,
-            pkg.label(),
-            ids.join(", ")
-        )),
+    match consult(registry, &pkg).await {
+        Some((_, Verdict::Deny(reason))) => {
+            Some(format!("{} {} {reason}", registry.eco, pkg.label()))
+        }
         _ => None,
     }
-}
-
-fn block(registry: &'static registries::Registry, pkg: Package, reason: Reason) -> Decision {
-    Decision::Block { eco: registry.osv, pkg, reason }
 }

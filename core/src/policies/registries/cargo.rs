@@ -3,7 +3,7 @@ use super::{Pattern, Registry};
 pub static CARGO_INDEX: Registry = Registry {
     prefix: "/cargo/index/",
     eco: "cargo",
-    osv: "crates.io",
+    osv_name: "crates.io",
     upstream: "https://index.crates.io/",
     index: true,
     patterns: &[
@@ -20,7 +20,7 @@ pub static CARGO_INDEX: Registry = Registry {
 pub static CARGO_DL: Registry = Registry {
     prefix: "/cargo-dl/",
     eco: "cargo",
-    osv: "crates.io",
+    osv_name: "crates.io",
     upstream: "https://static.crates.io/crates/",
     index: false,
     patterns: &[Pattern { re: r"^(?<name>[^/]+)/(?<version>[^/]+)", rewrite: None }],
@@ -30,7 +30,7 @@ pub static CARGO_DL: Registry = Registry {
 pub static CRATES_API: Registry = Registry {
     prefix: "/crates-api/",
     eco: "cargo",
-    osv: "crates.io",
+    osv_name: "crates.io",
     upstream: "https://crates.io/",
     index: false,
     patterns: &[],

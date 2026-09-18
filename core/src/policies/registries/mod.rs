@@ -40,7 +40,7 @@ pub struct Registry {
     pub prefix: &'static str,
     pub eco: &'static str,
     /// OSV names ecosystems differently to us: "crates.io", not "cargo".
-    pub osv: &'static str,
+    pub osv_name: &'static str,
     pub upstream: &'static str,
     /// Responses are link lists we may rewrite; package bytes must be passed through untouched.
     pub index: bool,

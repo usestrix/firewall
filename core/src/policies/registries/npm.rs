@@ -3,7 +3,7 @@ use super::{Pattern, Registry};
 pub static NPM: Registry = Registry {
     prefix: "/npm/",
     eco: "npm",
-    osv: "npm",
+    osv_name: "npm",
     upstream: "https://registry.npmjs.org/",
     index: true,
     patterns: &[

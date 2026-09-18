@@ -1,6 +1,6 @@
 pub mod aliasing;
+pub mod policies;
 pub mod proxy;
-pub mod routing;
 
 use tracing_subscriber::{fmt, EnvFilter};
 

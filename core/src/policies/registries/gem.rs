@@ -4,7 +4,7 @@ use super::Registry;
 pub static GEM: Registry = Registry {
     prefix: "/gem/",
     eco: "gem",
-    osv: "RubyGems",
+    osv_name: "RubyGems",
     upstream: "https://rubygems.org/",
     index: true,
     patterns: &[],

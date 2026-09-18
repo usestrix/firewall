@@ -1,4 +1,4 @@
-use firewall::routing::screen;
+use firewall::policies::screen;
 use rama::rt::blocking::Runtime;
 
 #[test]

@@ -1,5 +1,5 @@
 use firewall::aliasing::managers::*;
-use firewall::routing::registries;
+use firewall::policies::registries;
 
 #[test]
 fn recipes_expand_into_the_environment() {

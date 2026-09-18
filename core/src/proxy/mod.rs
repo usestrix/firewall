@@ -1,4 +1,4 @@
-use crate::routing::{self, Check, Decision, Package, Reason};
+use crate::policies::{self, Check, Decision};
 use crate::Config;
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
@@ -37,22 +37,24 @@ async fn handle(req: Request, cfg: &Config) -> Response {
 }
 
 async fn screen(target: String, cfg: &Config) -> Response {
-    match routing::decide(&target, cfg).await {
+    match policies::decide(&target, cfg).await {
         Decision::Unroutable => {
             warn!("no route, unknown prefix");
             reply(404, "text/plain", b"No route.\n".to_vec())
         }
-        Decision::Block { eco, pkg, reason } => {
-            let msg = blocked(eco, &pkg, &reason);
-            warn!("{msg}");
+        Decision::Block { eco, pkg, filter, reason } => {
+            let msg = format!("blocked by firewall: {eco} {} {reason}", pkg.label());
+            warn!(%filter, "{msg}");
             reply(403, "text/plain", format!("{msg}\n").into_bytes())
         }
         Decision::Allow { target, check } => {
             match &check {
                 Check::NoPackage => {}
-                Check::Clean(pkg) => info!(eco = %target.eco, pkg = %pkg.label(), "OSV clean"),
-                Check::Unverified(pkg, e) => {
-                    info!(pkg = %pkg.label(), error = %e, "OSV lookup failed, allowing")
+                Check::Allowed(pkg) => {
+                    info!(eco = %target.eco, pkg = %pkg.label(), "cleared by every filter")
+                }
+                Check::Unverified { pkg, filter, error } => {
+                    info!(pkg = %pkg.label(), %filter, %error, "filter could not check, allowing")
                 }
             }
             info!(eco = %target.eco, upstream = %target.upstream, "fetching upstream");
@@ -64,7 +66,7 @@ async fn screen(target: String, cfg: &Config) -> Response {
     }
 }
 
-async fn mirror(target: &routing::Target) -> (u16, String, Vec<u8>, usize) {
+async fn mirror(target: &policies::Target) -> (u16, String, Vec<u8>, usize) {
     let client = EasyHttpWebClient::default();
     let response = match client.get(&target.upstream).send().await {
         Ok(response) => response,
@@ -106,14 +108,6 @@ fn reply(status: u16, ctype: &str, body: Vec<u8>) -> Response {
         .header(CONTENT_TYPE, ctype)
         .body(Body::from(body))
         .expect("status and content type are valid")
-}
-
-fn blocked(eco: &str, pkg: &Package, reason: &Reason) -> String {
-    let detail = match reason {
-        Reason::Malicious(ids) => format!("is flagged malicious by OSV ({})", ids.join(", ")),
-        Reason::Unverified(e) => format!("could not be verified against OSV ({})", e),
-    };
-    format!("blocked by firewall: {} {} {}", eco, pkg.label(), detail)
 }
 
 fn human(n: usize) -> String {

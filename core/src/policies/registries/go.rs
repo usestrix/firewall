@@ -4,7 +4,7 @@ use super::Registry;
 pub static GO: Registry = Registry {
     prefix: "/go/",
     eco: "go",
-    osv: "Go",
+    osv_name: "Go",
     upstream: "https://proxy.golang.org/",
     index: true,
     patterns: &[],

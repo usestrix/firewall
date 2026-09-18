@@ -5,7 +5,7 @@ const FILES: (&str, &str) = ("https://files.pythonhosted.org/", "/pypi-files/");
 pub static PYPI: Registry = Registry {
     prefix: "/pypi/",
     eco: "pypi",
-    osv: "PyPI",
+    osv_name: "PyPI",
     upstream: "https://pypi.org/",
     index: true,
     patterns: &[
@@ -18,7 +18,7 @@ pub static PYPI: Registry = Registry {
 pub static PYPI_FILES: Registry = Registry {
     prefix: "/pypi-files/",
     eco: "pypi",
-    osv: "PyPI",
+    osv_name: "PyPI",
     upstream: "https://files.pythonhosted.org/",
     index: false,
     patterns: &[],

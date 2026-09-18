@@ -1,4 +1,4 @@
-use crate::routing::{self, registries};
+use crate::policies::{self, registries};
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::header::{CONTENT_LENGTH, HOST};
@@ -53,7 +53,7 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
         return Ok(text(400, "firewall: expected an absolute URL\n"));
     };
 
-    if let Some(reason) = routing::screen(&url).await {
+    if let Some(reason) = policies::screen(&url).await {
         warn!(method = %req.method(), %url, %reason, "blocked");
         return Ok(text(403, &format!("blocked by firewall: {reason}\n")));
     }
