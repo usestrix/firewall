@@ -2,6 +2,7 @@ use bpaf::{any, construct, long, short, OptionParser, Parser};
 use firewall::aliasing::{self, Invocation, Manager};
 use firewall::{proxy, Config, DEFAULT_PORT};
 use std::io::ErrorKind;
+use tracing::{error, info};
 
 enum SubCommand {
     Serve(Config),
@@ -63,6 +64,7 @@ fn config() -> impl Parser<Config> {
 }
 
 fn main() {
+    firewall::init_logging();
     match options().run() {
         SubCommand::Serve(config) => serve(config),
         SubCommand::Run(invocation) => run(invocation),
@@ -89,13 +91,12 @@ fn run(invocation: Invocation) -> ! {
         Ok(port) => port,
         Err(e) => fail(&format!("could not start the proxy: {e}")),
     };
-    println!("firewall proxy on {}", firewall::local_url(port, ""));
-    println!("logging every intercepted URL to {}\n", aliasing::LOG_PATH);
+    info!(proxy = %firewall::local_url(port, ""), "forward proxy listening");
 
     match aliasing::run(port, &invocation, None) {
         Ok(code) => std::process::exit(code),
         Err(e) if e.kind() == ErrorKind::NotFound => {
-            eprintln!("firewall: {} is not installed", invocation.manager.command);
+            error!("{} is not installed", invocation.manager.command);
             std::process::exit(127)
         }
         Err(e) => fail(&format!("could not run {}: {e}", invocation.manager.command)),
@@ -103,7 +104,7 @@ fn run(invocation: Invocation) -> ! {
 }
 
 fn fail(message: &str) -> ! {
-    eprintln!("firewall: {message}");
+    error!("{message}");
     std::process::exit(1)
 }
 

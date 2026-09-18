@@ -4,9 +4,9 @@ use firewall::aliasing;
 use probe::Outcome;
 
 fn main() -> std::io::Result<()> {
+    firewall::init_logging();
     let port = aliasing::spawn(0)?;
-    println!("firewall proxy on {}", firewall::local_url(port, ""));
-    println!("logging every intercepted URL to {}\n", aliasing::LOG_PATH);
+    println!("firewall proxy on {}\n", firewall::local_url(port, ""));
 
     let results = probe::all(port);
     println!();

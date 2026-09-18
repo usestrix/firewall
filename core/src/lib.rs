@@ -2,7 +2,7 @@ pub mod aliasing;
 pub mod proxy;
 pub mod routing;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use tracing_subscriber::{fmt, EnvFilter};
 
 pub const DEFAULT_PORT: u16 = 8080;
 
@@ -27,7 +27,8 @@ pub fn local_url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{port}{path}")
 }
 
-pub fn hms() -> String {
-    let s = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-    format!("{:02}:{:02}:{:02}", (s / 3600) % 24, (s / 60) % 60, s % 60)
+/// Logs go to stderr so stdout stays free for the program's own output.
+pub fn init_logging() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    fmt().with_env_filter(filter).with_target(false).with_writer(std::io::stderr).init();
 }

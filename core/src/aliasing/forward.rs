@@ -12,11 +12,7 @@ use rama::service::service_fn;
 use rama::tcp::server::TcpListener;
 use rama::{Layer, Service};
 use std::convert::Infallible;
-use std::fs::OpenOptions;
-use std::io::Write;
-use std::sync::Mutex;
-
-pub const LOG_PATH: &str = "/tmp/aliaslog";
+use tracing::{error, info, warn};
 
 /// Speaks plaintext to clients and HTTPS upstream, so the full URL is visible
 /// without a certificate.
@@ -29,8 +25,9 @@ pub fn spawn(port: u16) -> std::io::Result<u16> {
     std::thread::spawn(move || {
         runtime.block_on(async move {
             let exec = Executor::default();
-            let Ok(listener) = TcpListener::try_from_std_tcp_listener(bound, exec.clone()) else {
-                return;
+            let listener = match TcpListener::try_from_std_tcp_listener(bound, exec.clone()) {
+                Ok(listener) => listener,
+                Err(e) => return error!(error = %e, "forward proxy could not take over the socket"),
             };
             let server = HttpServer::auto(exec).service(
                 (RemoveResponseHeaderLayer::hop_by_hop(), RemoveRequestHeaderLayer::hop_by_hop())
@@ -44,8 +41,7 @@ pub fn spawn(port: u16) -> std::io::Result<u16> {
 
 async fn handle(req: Request) -> Result<Response, Infallible> {
     if req.method() == Method::CONNECT {
-        record(&format!("CONNECT {} [refused]", req.uri()));
-        eprintln!("firewall: refused CONNECT {}, only plain HTTP can be screened", req.uri());
+        warn!(uri = %req.uri(), "refused CONNECT, only plain HTTP can be screened");
         return Ok(text(
             403,
             "firewall: HTTPS tunnelling is disabled, request it over http:// instead\n",
@@ -53,12 +49,12 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
     }
 
     let Some(url) = upstream_url(&req) else {
-        record(&format!("{} {} [unroutable]", req.method(), req.uri()));
+        warn!(method = %req.method(), uri = %req.uri(), "unroutable, expected an absolute URL");
         return Ok(text(400, "firewall: expected an absolute URL\n"));
     };
 
     if let Some(reason) = routing::screen(&url).await {
-        record(&format!("{} {url} [blocked]", req.method()));
+        warn!(method = %req.method(), %url, %reason, "blocked");
         return Ok(text(403, &format!("blocked by firewall: {reason}\n")));
     }
 
@@ -67,7 +63,7 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
         unreachable!("upstream fetch is not https: {url}");
     }
 
-    record(&format!("{} {url}", req.method()));
+    info!(method = %req.method(), %url, "forwarding");
     let index = is_index_url(&url);
     let (mut parts, body) = req.into_parts();
     let Ok(uri) = url.parse() else {
@@ -78,7 +74,10 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
     let client = DecompressionLayer::new().into_layer(EasyHttpWebClient::default());
     let response = match client.serve(Request::from_parts(parts, body)).await {
         Ok(response) => response,
-        Err(e) => return Ok(text(502, &format!("firewall: upstream error: {e}\n"))),
+        Err(e) => {
+            warn!(%url, error = %e, "upstream request failed");
+            return Ok(text(502, &format!("firewall: upstream error: {e}\n")));
+        }
     };
     let (mut parts, body) = response.into_parts();
     if !index {
@@ -86,6 +85,7 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
     }
 
     let Ok(collected) = body.collect().await else {
+        warn!(%url, "could not read the upstream body");
         return Ok(text(502, "firewall: could not read the upstream body\n"));
     };
     // The rewrite changes the length, so let the server state it again.
@@ -126,16 +126,4 @@ pub fn downgrade(body: Vec<u8>) -> Vec<u8> {
         text = text.replace(&format!("https://{host}"), &format!("http://{host}"));
     }
     text.into_bytes()
-}
-
-fn record(entry: &str) {
-    static LOCK: Mutex<()> = Mutex::new(());
-    let line = format!("{} {entry}\n", crate::hms());
-    let _guard = LOCK.lock();
-    // Reopened per line so deleting the log starts a new one instead of an unlinked inode.
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(LOG_PATH) {
-        let _ = file.write_all(line.as_bytes());
-    }
-    print!("{line}");
-    let _ = std::io::stdout().flush();
 }

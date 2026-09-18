@@ -1,22 +1,18 @@
-mod process;
-
 use crate::routing::{self, Check, Decision, Package, Reason};
 use crate::Config;
-use rama::extensions::ExtensionsRef;
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::header::CONTENT_TYPE;
 use rama::http::server::HttpServer;
 use rama::http::service::client::HttpClientExt;
 use rama::http::{Body, Request, Response, StatusCode};
-use rama::net::stream::SocketInfo;
 use rama::rt::blocking::Runtime;
 use rama::rt::Executor;
 use rama::service::service_fn;
 use rama::tcp::server::TcpListener;
 use std::convert::Infallible;
-use std::io::Write;
 use std::sync::Arc;
+use tracing::{info, info_span, warn, Instrument};
 
 pub fn serve(cfg: Config) -> std::io::Result<()> {
     let bound = std::net::TcpListener::bind(("127.0.0.1", cfg.port))?;
@@ -35,62 +31,46 @@ pub fn serve(cfg: Config) -> std::io::Result<()> {
 }
 
 async fn handle(req: Request, cfg: &Config) -> Response {
-    let peer_port = req.extensions().get_ref::<SocketInfo>().map_or(0, |s| s.peer_addr().port);
     let target = req.uri().request_target().into_owned();
+    let span = info_span!("request", method = %req.method(), %target);
+    screen(target, cfg).instrument(span).await
+}
 
-    let (proc_name, cmdline) = process::lookup(peer_port);
-    let mut log = format!(
-        "\n{}\n[{}] {} {}\n  process : {}\n",
-        "=".repeat(74),
-        crate::hms(),
-        req.method(),
-        target,
-        proc_name
-    );
-    if !cmdline.is_empty() {
-        let c: String = cmdline.chars().take(150).collect();
-        log.push_str(&format!("  cmdline : {c}\n"));
-    }
-
-    let response = match routing::decide(&target, cfg).await {
+async fn screen(target: String, cfg: &Config) -> Response {
+    match routing::decide(&target, cfg).await {
         Decision::Unroutable => {
-            log.push_str("  --> no route (unknown prefix)\n");
+            warn!("no route, unknown prefix");
             reply(404, "text/plain", b"No route.\n".to_vec())
         }
         Decision::Block { eco, pkg, reason } => {
             let msg = blocked(eco, &pkg, &reason);
-            log.push_str(&format!("  !!! {msg}\n"));
+            warn!("{msg}");
             reply(403, "text/plain", format!("{msg}\n").into_bytes())
         }
         Decision::Allow { target, check } => {
             match &check {
                 Check::NoPackage => {}
-                Check::Clean(p) => {
-                    log.push_str(&format!("  ok  OSV clean: {}/{}\n", target.eco, p.label()))
+                Check::Clean(pkg) => info!(eco = %target.eco, pkg = %pkg.label(), "OSV clean"),
+                Check::Unverified(pkg, e) => {
+                    info!(pkg = %pkg.label(), error = %e, "OSV lookup failed, allowing")
                 }
-                Check::Unverified(p, e) => log.push_str(&format!(
-                    "  ??? OSV lookup failed for {} ({}) -- ALLOWING\n",
-                    p.label(),
-                    e
-                )),
             }
-            log.push_str(&format!("  --> {} upstream {}\n", target.eco, target.upstream));
-            let (status, ctype, body, note) = mirror(&target).await;
-            log.push_str(&format!("  <-- {} {}{}\n", status, human(body.len()), note));
+            info!(eco = %target.eco, upstream = %target.upstream, "fetching upstream");
+
+            let (status, ctype, body, rewrites) = mirror(&target).await;
+            info!(status, size = %human(body.len()), rewrites, "served");
             reply(status, &ctype, body)
         }
-    };
-
-    emit(&log);
-    response
+    }
 }
 
-async fn mirror(target: &routing::Target) -> (u16, String, Vec<u8>, String) {
+async fn mirror(target: &routing::Target) -> (u16, String, Vec<u8>, usize) {
     let client = EasyHttpWebClient::default();
     let response = match client.get(&target.upstream).send().await {
         Ok(response) => response,
         Err(e) => {
-            return (502, "text/plain".to_string(), e.to_string().into_bytes(), String::new())
+            warn!(error = %e, "upstream request failed");
+            return (502, "text/plain".to_string(), e.to_string().into_bytes(), 0);
         }
     };
 
@@ -105,7 +85,8 @@ async fn mirror(target: &routing::Target) -> (u16, String, Vec<u8>, String) {
     let bytes = match response.into_body().collect().await {
         Ok(collected) => collected.to_bytes().to_vec(),
         Err(e) => {
-            return (502, "text/plain".to_string(), e.to_string().into_bytes(), String::new())
+            warn!(error = %e, "could not read the upstream body");
+            return (502, "text/plain".to_string(), e.to_string().into_bytes(), 0);
         }
     };
 
@@ -113,14 +94,9 @@ async fn mirror(target: &routing::Target) -> (u16, String, Vec<u8>, String) {
         Some((from, to)) => {
             let text = String::from_utf8_lossy(&bytes).into_owned();
             let hits = text.matches(from.as_str()).count();
-            (
-                status,
-                ctype,
-                text.replace(from.as_str(), to).into_bytes(),
-                format!(", rewrote {hits} URLs"),
-            )
+            (status, ctype, text.replace(from.as_str(), to).into_bytes(), hits)
         }
-        None => (status, ctype, bytes, String::new()),
+        None => (status, ctype, bytes, 0),
     }
 }
 
@@ -138,13 +114,6 @@ fn blocked(eco: &str, pkg: &Package, reason: &Reason) -> String {
         Reason::Unverified(e) => format!("could not be verified against OSV ({})", e),
     };
     format!("blocked by firewall: {} {} {}", eco, pkg.label(), detail)
-}
-
-fn emit(s: &str) {
-    let stdout = std::io::stdout();
-    let mut lock = stdout.lock();
-    let _ = lock.write_all(s.as_bytes());
-    let _ = lock.flush();
 }
 
 fn human(n: usize) -> String {

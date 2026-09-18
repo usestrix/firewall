@@ -640,6 +640,8 @@ dependencies = [
  "bpaf",
  "rama",
  "regex",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
