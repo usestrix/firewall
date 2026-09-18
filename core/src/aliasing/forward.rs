@@ -64,7 +64,7 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
     }
 
     info!(method = %req.method(), %url, "forwarding");
-    let index = is_index_url(&url);
+    let index = registries::is_index_url(&url);
     let (mut parts, body) = req.into_parts();
     let Ok(uri) = url.parse() else {
         return Ok(text(400, "firewall: expected an absolute URL\n"));
@@ -108,12 +108,6 @@ pub fn upstream_url(req: &Request) -> Option<String> {
         None => req.headers().get(HOST)?.to_str().ok()?.to_string(),
     };
     Some(format!("https://{host}{path}"))
-}
-
-pub fn is_index_url(url: &str) -> bool {
-    let rest = url.trim_start_matches("https://");
-    let host = rest.split_once('/').map_or(rest, |(host, _)| host);
-    registries::is_index(host)
 }
 
 /// crates.io serves config.json as octet-stream, so UTF-8 validity decides what is text.

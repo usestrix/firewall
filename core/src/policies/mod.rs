@@ -1,4 +1,4 @@
-mod filters;
+pub mod filters;
 pub mod registries;
 
 pub use registries::Package;

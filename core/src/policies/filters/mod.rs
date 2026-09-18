@@ -1,4 +1,4 @@
-mod osv;
+pub mod osv;
 
 use super::registries::{Package, Registry};
 use std::future::Future;

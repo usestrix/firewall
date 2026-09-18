@@ -1,4 +1,4 @@
-use firewall::aliasing::forward::{downgrade, is_index_url, upstream_url};
+use firewall::aliasing::forward::{downgrade, upstream_url};
 use rama::http::{Body, Request};
 
 fn request(target: &str, host: Option<&str>) -> Request {
@@ -22,12 +22,6 @@ fn requests_always_go_out_over_tls() {
         "https://pypi.org/six"
     );
     assert_eq!(upstream_url(&request("/six", None)), None);
-}
-
-#[test]
-fn only_indexes_are_rewritten() {
-    assert!(is_index_url("https://pypi.org/simple/six/"));
-    assert!(!is_index_url("https://files.pythonhosted.org/six.whl.metadata"));
 }
 
 #[test]

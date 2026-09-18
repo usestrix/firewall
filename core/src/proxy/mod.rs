@@ -59,20 +59,18 @@ async fn screen(target: String, cfg: &Config) -> Response {
             }
             info!(eco = %target.eco, upstream = %target.upstream, "fetching upstream");
 
-            let (status, ctype, body, rewrites) = mirror(&target).await;
-            info!(status, size = %human(body.len()), rewrites, "served");
-            reply(status, &ctype, body)
+            mirror(&target).await
         }
     }
 }
 
-async fn mirror(target: &policies::Target) -> (u16, String, Vec<u8>, usize) {
+async fn mirror(target: &policies::Target) -> Response {
     let client = EasyHttpWebClient::default();
     let response = match client.get(&target.upstream).send().await {
         Ok(response) => response,
         Err(e) => {
             warn!(error = %e, "upstream request failed");
-            return (502, "text/plain".to_string(), e.to_string().into_bytes(), 0);
+            return reply(502, "text/plain", e.to_string().into_bytes());
         }
     };
 
@@ -88,18 +86,21 @@ async fn mirror(target: &policies::Target) -> (u16, String, Vec<u8>, usize) {
         Ok(collected) => collected.to_bytes().to_vec(),
         Err(e) => {
             warn!(error = %e, "could not read the upstream body");
-            return (502, "text/plain".to_string(), e.to_string().into_bytes(), 0);
+            return reply(502, "text/plain", e.to_string().into_bytes());
         }
     };
 
-    match &target.rewrite {
+    let (body, rewrites) = match &target.rewrite {
         Some((from, to)) => {
             let text = String::from_utf8_lossy(&bytes).into_owned();
             let hits = text.matches(from.as_str()).count();
-            (status, ctype, text.replace(from.as_str(), to).into_bytes(), hits)
+            (text.replace(from.as_str(), to).into_bytes(), hits)
         }
-        None => (status, ctype, bytes, 0),
-    }
+        None => (bytes, 0),
+    };
+
+    info!(status, size = %human(body.len()), rewrites, "served");
+    reply(status, &ctype, body)
 }
 
 fn reply(status: u16, ctype: &str, body: Vec<u8>) -> Response {

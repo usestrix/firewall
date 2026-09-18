@@ -20,6 +20,10 @@ name = "forward"
 path = "tests/forward.rs"
 
 [[test]]
+name = "registries"
+path = "tests/registries.rs"
+
+[[test]]
 name = "osv"
 path = "tests/osv.rs"
 
@@ -29,7 +33,9 @@ path = "tests/managers.rs"
 
 [dependencies]
 bpaf = "0.9.28"
+percent-encoding = "2.3.2"
 rama = { version = "0.4.0", features = ["http-full", "ring", "rustls"] }
 regex = "1.13.1"
+serde_json = "1.0.151"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
