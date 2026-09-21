@@ -9,6 +9,12 @@ pub use state::FirewallState;
 
 use tracing_subscriber::{fmt, EnvFilter};
 
+/// One worker per core; rama's builder defaults to a single thread and rejects zero.
+pub(crate) fn runtime() -> std::io::Result<rama::rt::blocking::Runtime> {
+    let workers = std::thread::available_parallelism().map_or(1, |n| n.get());
+    rama::rt::blocking::Runtime::builder().with_worker_threads(workers).try_build()
+}
+
 pub fn local_url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{port}{path}")
 }

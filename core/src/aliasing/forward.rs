@@ -7,7 +7,6 @@ use rama::http::layer::decompression::DecompressionLayer;
 use rama::http::layer::remove_header::{RemoveRequestHeaderLayer, RemoveResponseHeaderLayer};
 use rama::http::server::HttpServer;
 use rama::http::{Body, Method, Request, Response, StatusCode};
-use rama::rt::blocking::Runtime;
 use rama::rt::Executor;
 use rama::service::service_fn;
 use rama::tcp::server::TcpListener;
@@ -23,7 +22,7 @@ pub fn spawn(port: u16, state: Arc<FirewallState>) -> std::io::Result<u16> {
     let local = bound.local_addr()?.port();
     bound.set_nonblocking(true)?;
 
-    let runtime = Runtime::try_new()?;
+    let runtime = crate::runtime()?;
     std::thread::spawn(move || {
         runtime.block_on(async move {
             let exec = Executor::default();

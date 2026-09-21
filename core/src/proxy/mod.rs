@@ -6,7 +6,6 @@ use rama::http::header::CONTENT_TYPE;
 use rama::http::server::HttpServer;
 use rama::http::service::client::HttpClientExt;
 use rama::http::{Body, Request, Response, StatusCode};
-use rama::rt::blocking::Runtime;
 use rama::rt::Executor;
 use rama::service::service_fn;
 use rama::tcp::server::TcpListener;
@@ -18,7 +17,7 @@ pub fn serve(state: FirewallState) -> std::io::Result<()> {
     let bound = std::net::TcpListener::bind(("127.0.0.1", state.config.port))?;
     bound.set_nonblocking(true)?;
     let state = Arc::new(state);
-    Runtime::try_new()?.block_on(async move {
+    crate::runtime()?.block_on(async move {
         let exec = Executor::default();
         let listener = TcpListener::try_from_std_tcp_listener(bound, exec.clone())?;
         let server = HttpServer::auto(exec).service(service_fn(move |req: Request| {
