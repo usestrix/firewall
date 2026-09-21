@@ -1,6 +1,8 @@
+pub mod denylist;
 pub mod osv;
 
 use super::registries::{Package, Registry};
+use crate::state::FirewallState;
 use std::future::Future;
 use std::pin::Pin;
 
@@ -15,21 +17,30 @@ pub enum Verdict {
 
 pub trait Filter: Sync {
     fn name(&self) -> &'static str;
-    fn allow<'a>(&'a self, registry: &'static Registry, pkg: &'a Package) -> Answer<'a>;
+    fn allow<'a>(
+        &'a self,
+        state: &'a FirewallState,
+        registry: &'static Registry,
+        pkg: &'a Package,
+    ) -> Answer<'a>;
 }
 
-pub static FILTERS: &[&dyn Filter] = &[&osv::Osv];
+pub static FILTERS: &[&dyn Filter] = &[&denylist::Denylist, &osv::Osv];
 
-/// Asks each filter in turn and stops at the first one with something to say.
+/// Asks every filter. A `Deny` wins; failing that, the first filter that could not tell.
 pub async fn consult(
+    state: &FirewallState,
     registry: &'static Registry,
     pkg: &Package,
 ) -> Option<(&'static str, Verdict)> {
+    let mut unsure = None;
     for filter in FILTERS {
-        match filter.allow(registry, pkg).await {
+        match filter.allow(state, registry, pkg).await {
             Verdict::Allow => continue,
-            objection => return Some((filter.name(), objection)),
+            Verdict::Deny(reason) => return Some((filter.name(), Verdict::Deny(reason))),
+            unknown if unsure.is_none() => unsure = Some((filter.name(), unknown)),
+            _ => continue,
         }
     }
-    None
+    unsure
 }

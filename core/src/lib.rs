@@ -1,27 +1,13 @@
 pub mod aliasing;
+pub mod config;
 pub mod policies;
 pub mod proxy;
+pub mod state;
+
+pub use config::{FirewallConfig, DEFAULT_PORT};
+pub use state::FirewallState;
 
 use tracing_subscriber::{fmt, EnvFilter};
-
-pub const DEFAULT_PORT: u16 = 8080;
-
-pub struct Config {
-    pub port: u16,
-    pub fail_open: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config { port: DEFAULT_PORT, fail_open: true }
-    }
-}
-
-impl Config {
-    pub fn local_url(&self, path: &str) -> String {
-        local_url(self.port, path)
-    }
-}
 
 pub fn local_url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{port}{path}")

@@ -1,6 +1,7 @@
 use super::{Answer, Filter, Verdict};
 use crate::policies::registries::Registry;
 use crate::policies::Package;
+use crate::state::FirewallState;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::service::client::HttpClientExt;
 use rama::http::{BodyExtractExt, StatusCode};
@@ -15,7 +16,12 @@ impl Filter for Osv {
         "osv"
     }
 
-    fn allow<'a>(&'a self, registry: &'static Registry, pkg: &'a Package) -> Answer<'a> {
+    fn allow<'a>(
+        &'a self,
+        _state: &'a FirewallState,
+        registry: &'static Registry,
+        pkg: &'a Package,
+    ) -> Answer<'a> {
         Box::pin(async move {
             let client = EasyHttpWebClient::default();
             let query = query(registry.osv_name, pkg);
@@ -57,7 +63,9 @@ fn query(eco: &str, pkg: &Package) -> String {
 /// A MAL- id marks a malware advisory; every other OSV id is an ordinary vulnerability.
 pub fn mal_ids(body: &Value) -> Vec<String> {
     let mut ids = Vec::new();
-    let Some(vulns) = body["vulns"].as_array() else { return ids };
+    let Some(vulns) = body["vulns"].as_array() else {
+        return ids;
+    };
     for vuln in vulns {
         keep_mal(&vuln["id"], &mut ids);
         if let Some(aliases) = vuln["aliases"].as_array() {

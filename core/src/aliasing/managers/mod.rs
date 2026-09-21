@@ -10,7 +10,7 @@ mod pnpm;
 mod uv;
 
 pub use bun::BUN;
-pub use cargo::{home_dir as cargo_home, CARGO};
+pub use cargo::CARGO;
 pub use gem::GEM;
 pub use go::GO;
 pub use npm::NPM;

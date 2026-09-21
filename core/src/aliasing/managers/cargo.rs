@@ -1,5 +1,4 @@
-use super::{expand, Args, Manager, PROXY};
-use std::path::PathBuf;
+use super::{Args, Manager, PROXY};
 
 /// A separate home keeps fetched crates out of the real cache.
 const HOME: &str = "{tmp}/firewall-cargo-home";
@@ -23,7 +22,3 @@ pub static CARGO: Manager = Manager {
         ],
     }],
 };
-
-pub fn home_dir() -> PathBuf {
-    PathBuf::from(expand(HOME, ""))
-}

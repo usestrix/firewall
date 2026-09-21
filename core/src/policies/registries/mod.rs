@@ -11,8 +11,6 @@ use npm::*;
 use percent_encoding::percent_decode_str;
 use pypi::*;
 use regex::Regex;
-use std::collections::HashMap;
-use std::sync::LazyLock;
 
 #[derive(Clone)]
 pub struct Package {
@@ -30,6 +28,7 @@ impl Package {
 }
 
 /// Tried in order against the path left after the prefix; `name` and `version` are the captures we read.
+#[derive(Debug)]
 pub struct Pattern {
     pub re: &'static str,
     /// Registry URLs in an index response, repointed at our prefixes so the download comes back through us.
@@ -37,6 +36,7 @@ pub struct Pattern {
 }
 
 /// Keyed both ways: the mirror matches on `prefix`, the alias proxy on `upstream`.
+#[derive(Debug)]
 pub struct Registry {
     pub prefix: &'static str,
     pub eco: &'static str,
@@ -65,45 +65,16 @@ pub struct Resolved {
     pub rewrite: Option<(&'static str, &'static str)>,
 }
 
-pub static REGISTRIES: &[&Registry] =
+/// The ones we ship with; `FirewallState` reads this once and everything goes through it.
+pub static BUILT_IN: &[&Registry] =
     &[&NPM, &PYPI_FILES, &PYPI, &CARGO_DL, &CARGO_INDEX, &CRATES_API, &GEM, &GO];
 
-static COMPILED: LazyLock<HashMap<&'static str, Vec<Regex>>> = LazyLock::new(|| {
-    let mut map = HashMap::new();
-    for registry in REGISTRIES {
-        let res = registry.patterns.iter().map(|p| Regex::new(p.re).expect(p.re)).collect();
-        map.insert(registry.prefix, res);
-    }
-    map
-});
-
-pub fn match_path(path: &str) -> Option<(&'static Registry, &str)> {
-    REGISTRIES.iter().find_map(|r| path.strip_prefix(r.prefix).map(|rest| (*r, rest)))
-}
-
-pub fn match_upstream(url: &str) -> Option<(&'static Registry, &str)> {
-    REGISTRIES.iter().find_map(|r| url.strip_prefix(r.upstream).map(|rest| (*r, rest)))
-}
-
-/// Every host we alias, so the forward proxy knows which https:// links to point back at itself.
-pub fn hosts() -> Vec<&'static str> {
-    let mut hosts: Vec<&'static str> = Vec::new();
-    for registry in REGISTRIES {
-        let host = registry.host();
-        if !hosts.contains(&host) {
-            hosts.push(host);
-        }
-    }
-    hosts
-}
-
-pub fn is_index_url(url: &str) -> bool {
-    REGISTRIES.iter().any(|r| r.index && r.host() == host_of(url))
-}
-
-pub fn resolve(registry: &'static Registry, rest: &str) -> Resolved {
-    for (pattern, re) in registry.patterns.iter().zip(&COMPILED[registry.prefix]) {
-        let Some(caps) = re.captures(rest) else { continue };
+/// The patterns are compiled once into `FirewallState`, which is where this is called from.
+pub fn resolve(registry: &'static Registry, rest: &str, patterns: &[Regex]) -> Resolved {
+    for (pattern, re) in registry.patterns.iter().zip(patterns) {
+        let Some(caps) = re.captures(rest) else {
+            continue;
+        };
         let pkg = caps.name("name").map(|n| Package {
             name: url_decode(n.as_str()),
             version: caps.name("version").map(|v| url_decode(v.as_str())),

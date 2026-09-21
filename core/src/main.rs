@@ -1,33 +1,24 @@
-use bpaf::{any, construct, long, short, OptionParser, Parser};
-use firewall::aliasing::{self, Invocation, Manager};
-use firewall::{proxy, Config, DEFAULT_PORT};
+use bpaf::{any, choice, pure, OptionParser, Parser};
+use firewall::aliasing::{self, Invocation, Manager, MANAGERS};
+use firewall::{config, proxy, FirewallConfig, FirewallState};
 use std::io::ErrorKind;
+use std::sync::Arc;
 use tracing::{error, info};
 
 enum SubCommand {
-    Serve(Config),
+    Serve,
     Run(Invocation),
 }
 
 fn options() -> OptionParser<SubCommand> {
-    let serve = construct!(SubCommand::Serve(config()))
+    let serve = pure(())
+        .map(|()| SubCommand::Serve)
         .to_options()
         .descr("Serve the registry proxy package managers point at")
         .command("serve");
 
-    let npm = package(&aliasing::NPM);
-    let pip = package(&aliasing::PIP);
-    let pip3 = package(&aliasing::PIP3);
-    let cargo = package(&aliasing::CARGO);
-    let go = package(&aliasing::GO);
-    let gem = package(&aliasing::GEM);
-    let uv = package(&aliasing::UV);
-    let pdm = package(&aliasing::PDM);
-    let pipenv = package(&aliasing::PIPENV);
-    let pnpm = package(&aliasing::PNPM);
-    let bun = package(&aliasing::BUN);
-
-    construct!([serve, npm, pip, pip3, cargo, go, gem, uv, pdm, pipenv, pnpm, bun])
+    let managers = MANAGERS.iter().map(|manager| package(manager).boxed());
+    choice(std::iter::once(serve.boxed()).chain(managers))
         .to_options()
         .descr("Screens package downloads before they reach your machine")
         .fallback_to_usage()
@@ -50,34 +41,30 @@ fn leak(text: String) -> &'static str {
     Box::leak(text.into_boxed_str())
 }
 
-fn config() -> impl Parser<Config> {
-    let port = short('p')
-        .long("port")
-        .help(leak(format!("Port to listen on (default {DEFAULT_PORT})")))
-        .argument::<u16>("PORT")
-        .fallback(DEFAULT_PORT);
-    let fail_open = long("fail-closed")
-        .help("Block when the OSV lookup fails, instead of allowing")
-        .switch()
-        .map(|closed| !closed);
-    construct!(Config { port, fail_open })
-}
-
 fn main() {
     firewall::init_logging();
     match options().run() {
-        SubCommand::Serve(config) => serve(config),
+        SubCommand::Serve => serve(),
         SubCommand::Run(invocation) => run(invocation),
     }
 }
 
-fn serve(config: Config) -> ! {
-    let port = config.port;
-    banner(&config);
-    match proxy::serve(config) {
+fn state() -> FirewallState {
+    match FirewallConfig::load() {
+        Ok(config) => FirewallState::new(config),
+        Err(e) => fail(&format!("could not read the config: {e}")),
+    }
+}
+
+fn serve() -> ! {
+    let state = state();
+    let port = state.config.port;
+    banner(&state.config);
+    match proxy::serve(state) {
         Ok(()) => std::process::exit(0),
         Err(e) if e.kind() == ErrorKind::AddrInUse => {
-            fail(&format!("port {port} is in use, pick another with --port"))
+            let where_ = config::path().map_or("the config".into(), |p| p.display().to_string());
+            fail(&format!("port {port} is in use, set another in {where_}"))
         }
         Err(e) if e.kind() == ErrorKind::PermissionDenied => {
             fail(&format!("not allowed to listen on port {port}"))
@@ -87,7 +74,8 @@ fn serve(config: Config) -> ! {
 }
 
 fn run(invocation: Invocation) -> ! {
-    let port = match aliasing::spawn(0) {
+    let state = Arc::new(state());
+    let port = match aliasing::spawn(0, state) {
         Ok(port) => port,
         Err(e) => fail(&format!("could not start the proxy: {e}")),
     };
@@ -108,11 +96,11 @@ fn fail(message: &str) -> ! {
     std::process::exit(1)
 }
 
-fn banner(config: &Config) {
+fn banner(config: &FirewallConfig) {
     let base = config.local_url("");
     println!("firewall registry proxy on {base}");
     println!(
-        "policy: {} on OSV lookup failure\n",
+        "policy: {} when a package cannot be checked\n",
         if config.fail_open { "allow" } else { "block" }
     );
     println!("point your package managers at it:");

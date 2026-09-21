@@ -1,4 +1,5 @@
 use firewall::aliasing::forward::{downgrade, upstream_url};
+use firewall::FirewallState;
 use rama::http::{Body, Request};
 
 fn request(target: &str, host: Option<&str>) -> Request {
@@ -27,7 +28,8 @@ fn requests_always_go_out_over_tls() {
 #[test]
 fn downgrade_touches_known_hosts_in_text_only() {
     let text = b"https://pypi.org/x https://example.com/y".to_vec();
-    assert_eq!(downgrade(text), b"http://pypi.org/x https://example.com/y".to_vec());
+    let state = FirewallState::default();
+    assert_eq!(downgrade(&state, text), b"http://pypi.org/x https://example.com/y".to_vec());
     let binary = vec![0x1f, 0x8b, 0xff, 0xfe];
-    assert_eq!(downgrade(binary.clone()), binary);
+    assert_eq!(downgrade(&state, binary.clone()), binary);
 }

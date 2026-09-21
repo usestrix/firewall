@@ -55,8 +55,17 @@ fn go() -> Option<PathBuf> {
 const MANIFEST: &str = "[package]\nname = \"fw-probe\"\nversion = \"0.0.0\"\n\
 edition = \"2021\"\n\n[dependencies]\nleft-pad = \"1\"\n";
 
+/// The scratch home the CARGO recipe sets, so a probe never reads a warm cache.
+fn cargo_home() -> PathBuf {
+    let home = aliasing::variables("", &aliasing::CARGO)
+        .into_iter()
+        .find(|(name, _)| name == "CARGO_HOME")
+        .expect("CARGO sets CARGO_HOME");
+    PathBuf::from(home.1)
+}
+
 fn cargo() -> Option<PathBuf> {
-    let _ = std::fs::remove_dir_all(aliasing::cargo_home().join("registry"));
+    let _ = std::fs::remove_dir_all(cargo_home().join("registry"));
     let dir = scratch("fw-probe-cargo")?;
     std::fs::create_dir_all(dir.join("src")).ok()?;
     std::fs::write(dir.join("src/main.rs"), "fn main() {}\n").ok()?;

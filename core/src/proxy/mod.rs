@@ -1,5 +1,5 @@
 use crate::policies::{self, Check, Decision};
-use crate::Config;
+use crate::state::FirewallState;
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::header::CONTENT_TYPE;
@@ -14,30 +14,30 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use tracing::{info, info_span, warn, Instrument};
 
-pub fn serve(cfg: Config) -> std::io::Result<()> {
-    let bound = std::net::TcpListener::bind(("127.0.0.1", cfg.port))?;
+pub fn serve(state: FirewallState) -> std::io::Result<()> {
+    let bound = std::net::TcpListener::bind(("127.0.0.1", state.config.port))?;
     bound.set_nonblocking(true)?;
-    let cfg = Arc::new(cfg);
+    let state = Arc::new(state);
     Runtime::try_new()?.block_on(async move {
         let exec = Executor::default();
         let listener = TcpListener::try_from_std_tcp_listener(bound, exec.clone())?;
         let server = HttpServer::auto(exec).service(service_fn(move |req: Request| {
-            let cfg = Arc::clone(&cfg);
-            async move { Ok::<_, Infallible>(handle(req, &cfg).await) }
+            let state = Arc::clone(&state);
+            async move { Ok::<_, Infallible>(handle(req, &state).await) }
         }));
         listener.serve(server).await;
         Ok(())
     })
 }
 
-async fn handle(req: Request, cfg: &Config) -> Response {
+async fn handle(req: Request, state: &FirewallState) -> Response {
     let target = req.uri().request_target().into_owned();
     let span = info_span!("request", method = %req.method(), %target);
-    screen(target, cfg).instrument(span).await
+    screen(target, state).instrument(span).await
 }
 
-async fn screen(target: String, cfg: &Config) -> Response {
-    match policies::decide(&target, cfg).await {
+async fn screen(target: String, state: &FirewallState) -> Response {
+    match policies::decide(&target, state).await {
         Decision::Unroutable => {
             warn!("no route, unknown prefix");
             reply(404, "text/plain", b"No route.\n".to_vec())

@@ -1,4 +1,5 @@
-use crate::policies::{self, registries};
+use crate::policies;
+use crate::state::FirewallState;
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::header::{CONTENT_LENGTH, HOST};
@@ -12,11 +13,12 @@ use rama::service::service_fn;
 use rama::tcp::server::TcpListener;
 use rama::{Layer, Service};
 use std::convert::Infallible;
+use std::sync::Arc;
 use tracing::{error, info, warn};
 
 /// Speaks plaintext to clients and HTTPS upstream, so the full URL is visible
 /// without a certificate.
-pub fn spawn(port: u16) -> std::io::Result<u16> {
+pub fn spawn(port: u16, state: Arc<FirewallState>) -> std::io::Result<u16> {
     let bound = std::net::TcpListener::bind(("127.0.0.1", port))?;
     let local = bound.local_addr()?.port();
     bound.set_nonblocking(true)?;
@@ -31,7 +33,10 @@ pub fn spawn(port: u16) -> std::io::Result<u16> {
             };
             let server = HttpServer::auto(exec).service(
                 (RemoveResponseHeaderLayer::hop_by_hop(), RemoveRequestHeaderLayer::hop_by_hop())
-                    .into_layer(service_fn(handle)),
+                    .into_layer(service_fn(move |req: Request| {
+                        let state = Arc::clone(&state);
+                        async move { handle(req, &state).await }
+                    })),
             );
             listener.serve(server).await;
         });
@@ -39,7 +44,7 @@ pub fn spawn(port: u16) -> std::io::Result<u16> {
     Ok(local)
 }
 
-async fn handle(req: Request) -> Result<Response, Infallible> {
+async fn handle(req: Request, state: &FirewallState) -> Result<Response, Infallible> {
     if req.method() == Method::CONNECT {
         warn!(uri = %req.uri(), "refused CONNECT, only plain HTTP can be screened");
         return Ok(text(
@@ -53,7 +58,7 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
         return Ok(text(400, "firewall: expected an absolute URL\n"));
     };
 
-    if let Some(reason) = policies::screen(&url).await {
+    if let Some(reason) = policies::screen(&url, state).await {
         warn!(method = %req.method(), %url, %reason, "blocked");
         return Ok(text(403, &format!("blocked by firewall: {reason}\n")));
     }
@@ -64,7 +69,7 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
     }
 
     info!(method = %req.method(), %url, "forwarding");
-    let index = registries::is_index_url(&url);
+    let index = state.is_index_url(&url);
     let (mut parts, body) = req.into_parts();
     let Ok(uri) = url.parse() else {
         return Ok(text(400, "firewall: expected an absolute URL\n"));
@@ -90,7 +95,7 @@ async fn handle(req: Request) -> Result<Response, Infallible> {
     };
     // The rewrite changes the length, so let the server state it again.
     parts.headers.remove(CONTENT_LENGTH);
-    Ok(Response::from_parts(parts, Body::from(downgrade(collected.to_bytes().to_vec()))))
+    Ok(Response::from_parts(parts, Body::from(downgrade(state, collected.to_bytes().to_vec()))))
 }
 
 fn text(status: u16, body: &str) -> Response {
@@ -111,12 +116,12 @@ pub fn upstream_url(req: &Request) -> Option<String> {
 }
 
 /// crates.io serves config.json as octet-stream, so UTF-8 validity decides what is text.
-pub fn downgrade(body: Vec<u8>) -> Vec<u8> {
+pub fn downgrade(state: &FirewallState, body: Vec<u8>) -> Vec<u8> {
     let mut text = match String::from_utf8(body) {
         Ok(text) => text,
         Err(raw) => return raw.into_bytes(),
     };
-    for host in registries::hosts() {
+    for host in state.hosts() {
         text = text.replace(&format!("https://{host}"), &format!("http://{host}"));
     }
     text.into_bytes()
