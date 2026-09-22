@@ -65,11 +65,11 @@ pub struct Resolved {
     pub rewrite: Option<(&'static str, &'static str)>,
 }
 
-/// The ones we ship with; `FirewallState` reads this once and everything goes through it.
+/// The ones we ship with; `Firewall` reads this once and everything goes through it.
 pub static BUILT_IN: &[&Registry] =
     &[&NPM, &PYPI_FILES, &PYPI, &CARGO_DL, &CARGO_INDEX, &CRATES_API, &GEM, &GO];
 
-/// The patterns are compiled once into `FirewallState`, which is where this is called from.
+/// The patterns are compiled once into `Firewall`, which is where this is called from.
 pub fn resolve(registry: &'static Registry, rest: &str, patterns: &[Regex]) -> Resolved {
     for (pattern, re) in registry.patterns.iter().zip(patterns) {
         let Some(caps) = re.captures(rest) else {

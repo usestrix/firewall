@@ -1,34 +1,36 @@
 use crate::config::FirewallConfig;
-use crate::policies::filters::denylist::List;
+use crate::policies::filters::denylist::Denylist;
+use crate::policies::filters::osv::Osv;
+use crate::policies::filters::Filter;
 use crate::policies::registries::*;
 use regex::Regex;
 use std::collections::HashMap;
-use tokio::sync::OnceCell;
 
 /// A running firewall: its config, the registries it screens, the compiled form of
 /// their patterns, and the denylists it has fetched so far. Shared by every request.
-pub struct FirewallState {
+pub struct Firewall {
     pub config: FirewallConfig,
     patterns: HashMap<&'static str, Vec<Regex>>,
-    denylists: HashMap<&'static str, OnceCell<List>>,
+    filters: Vec<Box<dyn Filter>>,
 }
 
-impl Default for FirewallState {
+impl Default for Firewall {
     fn default() -> Self {
-        FirewallState::new(FirewallConfig::default())
+        Firewall::new(FirewallConfig::default())
     }
 }
 
-impl FirewallState {
+impl Firewall {
     pub fn new(config: FirewallConfig) -> Self {
         let mut patterns = HashMap::new();
-        let mut denylists = HashMap::new();
         for registry in &config.registries {
             let compiled = registry.patterns.iter().map(|p| Regex::new(p.re).expect(p.re));
             patterns.insert(registry.prefix, compiled.collect());
-            denylists.entry(registry.osv_name).or_insert_with(OnceCell::new);
         }
-        FirewallState { config, patterns, denylists }
+        let ecosystems = config.registries.iter().map(|r| r.osv_name);
+        let denylist = Denylist::new(config.denylist.clone(), config.denylist.token(), ecosystems);
+        let filters: Vec<Box<dyn Filter>> = vec![Box::new(denylist), Box::new(Osv)];
+        Firewall { config, patterns, filters }
     }
 
     pub fn match_path<'a>(&self, path: &'a str) -> Option<(&'static Registry, &'a str)> {
@@ -46,7 +48,7 @@ impl FirewallState {
             .find_map(|r| url.strip_prefix(r.upstream).map(|rest| (*r, rest)))
     }
 
-    /// Every host we alias, so the forward proxy knows which https:// links to point back at itself.
+    /// Every host we screen: what the proxy rewrites and what the extension claims.
     pub fn hosts(&self) -> Vec<&'static str> {
         let mut hosts: Vec<&'static str> = Vec::new();
         for registry in &self.config.registries {
@@ -66,9 +68,7 @@ impl FirewallState {
         resolve(registry, rest, &self.patterns[registry.prefix])
     }
 
-    /// An ecosystem's list, filled by the first request that needs it. Registries
-    /// sharing an ecosystem share the cell, and so share the one download.
-    pub fn denylist(&self, eco: &'static str) -> &OnceCell<List> {
-        &self.denylists[eco]
+    pub fn filters(&self) -> &[Box<dyn Filter>] {
+        &self.filters
     }
 }

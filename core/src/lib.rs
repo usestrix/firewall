@@ -1,11 +1,14 @@
 pub mod aliasing;
 pub mod config;
+pub mod firewall;
+pub mod http;
+pub mod mitm;
+pub mod os;
 pub mod policies;
 pub mod proxy;
-pub mod state;
 
+pub use self::firewall::Firewall;
 pub use config::{FirewallConfig, DEFAULT_PORT};
-pub use state::FirewallState;
 
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -21,6 +24,9 @@ pub fn local_url(port: u16, path: &str) -> String {
 
 /// Logs go to stderr so stdout stays free for the program's own output.
 pub fn init_logging() {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    fmt().with_env_filter(filter).with_target(false).with_writer(std::io::stderr).init();
+    fmt().with_env_filter(log_filter()).with_target(false).with_writer(std::io::stderr).init();
+}
+
+pub(crate) fn log_filter() -> EnvFilter {
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
 }

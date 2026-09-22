@@ -1,5 +1,5 @@
 use firewall::aliasing::managers::*;
-use firewall::FirewallState;
+use firewall::Firewall;
 
 #[test]
 fn recipes_expand_into_the_environment() {
@@ -13,9 +13,9 @@ fn recipes_expand_into_the_environment() {
 }
 
 /// A manager pointed at a host with no registry would be aliased but never screened.
-#[test]
-fn every_overridden_registry_is_known() {
-    let hosts = FirewallState::default().hosts();
+#[tokio::test]
+async fn every_overridden_registry_is_known() {
+    let hosts = Firewall::default().hosts();
     for manager in MANAGERS {
         let values = manager.env.iter().map(|(_, value)| *value);
         let flags = manager.args.iter().flat_map(|args| args.flags.iter().copied());

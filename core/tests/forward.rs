@@ -1,5 +1,6 @@
-use firewall::aliasing::forward::{downgrade, upstream_url};
-use firewall::FirewallState;
+use firewall::aliasing::forward::downgrade;
+use firewall::http::https_url;
+use firewall::Firewall;
 use rama::http::{Body, Request};
 
 fn request(target: &str, host: Option<&str>) -> Request {
@@ -12,24 +13,28 @@ fn request(target: &str, host: Option<&str>) -> Request {
 
 #[test]
 fn requests_always_go_out_over_tls() {
-    for target in ["http://pypi.org/six", "HTTP://pypi.org/six", "https://pypi.org/six"] {
-        assert_eq!(
-            upstream_url(&request(target, None)).unwrap_or_default(),
-            "https://pypi.org/six"
-        );
+    let targets = [
+        "http://pypi.org/six",
+        "HTTP://pypi.org/six",
+        "https://pypi.org/six",
+        "http://pypi.org:443/six",
+        "http://user:pass@pypi.org/six",
+    ];
+    for target in targets {
+        assert_eq!(https_url(&request(target, None)).unwrap_or_default(), "https://pypi.org/six");
     }
     assert_eq!(
-        upstream_url(&request("/six", Some("pypi.org"))).unwrap_or_default(),
+        https_url(&request("/six", Some("pypi.org"))).unwrap_or_default(),
         "https://pypi.org/six"
     );
-    assert_eq!(upstream_url(&request("/six", None)), None);
+    assert_eq!(https_url(&request("/six", None)), None);
 }
 
-#[test]
-fn downgrade_touches_known_hosts_in_text_only() {
+#[tokio::test]
+async fn downgrade_touches_known_hosts_in_text_only() {
     let text = b"https://pypi.org/x https://example.com/y".to_vec();
-    let state = FirewallState::default();
-    assert_eq!(downgrade(&state, text), b"http://pypi.org/x https://example.com/y".to_vec());
+    let firewall = Firewall::default();
+    assert_eq!(downgrade(&firewall, text), b"http://pypi.org/x https://example.com/y".to_vec());
     let binary = vec![0x1f, 0x8b, 0xff, 0xfe];
-    assert_eq!(downgrade(&state, binary.clone()), binary);
+    assert_eq!(downgrade(&firewall, binary.clone()), binary);
 }

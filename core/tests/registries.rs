@@ -1,9 +1,9 @@
-use firewall::FirewallState;
+use firewall::Firewall;
 
 fn at(path: &str) -> (Option<String>, Option<String>, bool) {
-    let state = FirewallState::default();
-    let (registry, rest) = state.match_path(path).expect("no registry matched");
-    let resolved = state.resolve(registry, rest);
+    let firewall = Firewall::default();
+    let (registry, rest) = firewall.match_path(path).expect("no registry matched");
+    let resolved = firewall.resolve(registry, rest);
     let (name, version) = match resolved.pkg {
         Some(p) => (Some(p.name), p.version),
         None => (None, None),
@@ -11,21 +11,21 @@ fn at(path: &str) -> (Option<String>, Option<String>, bool) {
     (name, version, resolved.rewrite.is_some())
 }
 
-#[test]
-fn every_pattern_compiles() {
-    FirewallState::default();
+#[tokio::test]
+async fn every_pattern_compiles() {
+    Firewall::default();
 }
 
-#[test]
-fn hosts_come_from_upstreams() {
-    let state = FirewallState::default();
-    assert!(state.hosts().contains(&"files.pythonhosted.org"));
-    assert!(state.is_index_url("https://pypi.org/simple/six/"));
-    assert!(!state.is_index_url("https://files.pythonhosted.org/six.whl.metadata"));
+#[tokio::test]
+async fn hosts_come_from_upstreams() {
+    let firewall = Firewall::default();
+    assert!(firewall.hosts().contains(&"files.pythonhosted.org"));
+    assert!(firewall.is_index_url("https://pypi.org/simple/six/"));
+    assert!(!firewall.is_index_url("https://files.pythonhosted.org/six.whl.metadata"));
 }
 
-#[test]
-fn cargo_paths() {
+#[tokio::test]
+async fn cargo_paths() {
     assert_eq!(at("/cargo/index/ru/st/rustdecimal"), (Some("rustdecimal".into()), None, false));
     assert_eq!(at("/cargo/index/3/s/syn"), (Some("syn".into()), None, false));
     assert_eq!(at("/cargo/index/config.json"), (None, None, true));
@@ -35,8 +35,8 @@ fn cargo_paths() {
     );
 }
 
-#[test]
-fn npm_paths() {
+#[tokio::test]
+async fn npm_paths() {
     assert_eq!(at("/npm/left-pad"), (Some("left-pad".into()), None, true));
     assert_eq!(at("/npm/caf%C3%A9"), (Some("café".into()), None, true));
     assert_eq!(at("/npm/@scope%2fpkg"), (Some("@scope/pkg".into()), None, true));
@@ -50,8 +50,8 @@ fn npm_paths() {
     );
 }
 
-#[test]
-fn pypi_paths() {
+#[tokio::test]
+async fn pypi_paths() {
     assert_eq!(at("/pypi/simple/urllib3/"), (Some("urllib3".into()), None, true));
     assert_eq!(at("/pypi-files/packages/ab/cd/ef/urllib3-2.0.7.tar.gz"), (None, None, false));
 }

@@ -1,10 +1,9 @@
-use firewall::FirewallState;
-use std::sync::Arc;
+use firewall::FirewallConfig;
 
 fn main() {
     firewall::init_logging();
     let requested = std::env::args().nth(1).and_then(|p| p.parse().ok()).unwrap_or(0);
-    let port = firewall::aliasing::spawn(requested, Arc::new(FirewallState::default()))
+    let port = firewall::aliasing::spawn(requested, FirewallConfig::load().expect("config"))
         .expect("could not bind");
     println!("forward proxy on http://localhost:{port}");
     loop {

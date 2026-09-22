@@ -662,6 +662,7 @@ dependencies = [
  "directories",
  "percent-encoding",
  "rama",
+ "rcgen",
  "regex",
  "serde",
  "serde_json",
@@ -1955,6 +1956,7 @@ dependencies = [
  "rama-http-core",
  "rama-json",
  "rama-net",
+ "rama-net-apple-networkextension",
  "rama-socks5",
  "rama-tcp",
  "rama-tls",
@@ -2393,6 +2395,26 @@ dependencies = [
  "tokio",
  "tokio-util",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rama-net-apple-networkextension"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6643e7744cb0eb3a3e7eb72a26ca0be8fe884c4e0ae782294fee2f0eca0608e0"
+dependencies = [
+ "atomic-waker",
+ "bindgen",
+ "cc",
+ "libc",
+ "parking_lot",
+ "pin-project-lite",
+ "rama-core",
+ "rama-net",
+ "rama-utils",
+ "tokio",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 use firewall::policies::filters::osv::mal_ids;
 use firewall::policies::screen;
-use firewall::FirewallState;
+use firewall::Firewall;
 use rama::rt::blocking::Runtime;
 use serde_json::json;
 
@@ -8,14 +8,12 @@ use serde_json::json;
 #[ignore = "queries api.osv.dev"]
 fn osv_separates_a_flagged_crate_from_a_clean_one() {
     let runtime = Runtime::try_new().expect("runtime");
-    let state = FirewallState::default();
-    let flagged =
-        runtime.block_on(screen("https://static.crates.io/crates/rustdecimal/1.0.0", &state));
-    assert!(flagged.unwrap_or_default().contains("MAL-2022-1"));
-    assert_eq!(
-        runtime.block_on(screen("https://static.crates.io/crates/serde/1.0.200", &state)),
-        None
-    );
+    runtime.block_on(async {
+        let firewall = Firewall::default();
+        let flagged = screen("https://static.crates.io/crates/rustdecimal/1.0.0", &firewall).await;
+        assert!(flagged.unwrap_or_default().contains("MAL-2022-1"));
+        assert_eq!(screen("https://static.crates.io/crates/serde/1.0.200", &firewall).await, None);
+    });
 }
 
 #[test]

@@ -1,7 +1,6 @@
-use super::{Answer, Filter, Verdict};
+use super::{Filter, Verdict, VerdictFuture};
 use crate::policies::registries::Registry;
 use crate::policies::Package;
-use crate::state::FirewallState;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::service::client::HttpClientExt;
 use rama::http::{BodyExtractExt, StatusCode};
@@ -16,12 +15,7 @@ impl Filter for Osv {
         "osv"
     }
 
-    fn allow<'a>(
-        &'a self,
-        _state: &'a FirewallState,
-        registry: &'static Registry,
-        pkg: &'a Package,
-    ) -> Answer<'a> {
+    fn check<'a>(&'a self, registry: &'static Registry, pkg: &'a Package) -> VerdictFuture<'a> {
         Box::pin(async move {
             let client = EasyHttpWebClient::default();
             let query = query(registry.osv_name, pkg);

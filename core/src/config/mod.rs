@@ -5,6 +5,7 @@ use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
 pub const DEFAULT_PORT: u16 = 8080;
+const TOKEN_ENV: &str = "FIREWALL_GITHUB_TOKEN";
 
 /// What the firewall reads from its config file. Every field has a default, so a
 /// missing file means the same as an empty one.
@@ -14,19 +15,29 @@ pub struct FirewallConfig {
     pub port: u16,
     /// Allow a package when a filter could not check it.
     pub fail_open: bool,
-    pub denylist: Denylist,
+    pub denylist: DenylistSource,
     /// Not describable in the file yet, so this is always the built-in table.
     #[serde(skip)]
     pub registries: Vec<&'static Registry>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct Denylist {
+pub struct DenylistSource {
     /// One file per ecosystem lives under here, named the way OSV names it, in lowercase.
     pub base: String,
-    /// Environment variable holding a token, for a source that asks for one.
-    pub token: String,
+    /// Falls back to `FIREWALL_GITHUB_TOKEN`, so a token need not be written to disk.
+    pub token: Option<String>,
+    /// Polled for a new commit, which re-fetches every list in use.
+    pub revision: String,
+    /// How often that check runs.
+    pub poll_secs: u64,
+}
+
+impl DenylistSource {
+    pub fn token(&self) -> Option<String> {
+        self.token.clone().or_else(|| std::env::var(TOKEN_ENV).ok())
+    }
 }
 
 impl Default for FirewallConfig {
@@ -34,17 +45,20 @@ impl Default for FirewallConfig {
         FirewallConfig {
             port: DEFAULT_PORT,
             fail_open: true,
-            denylist: Denylist::default(),
+            denylist: DenylistSource::default(),
             registries: BUILT_IN.to_vec(),
         }
     }
 }
 
-impl Default for Denylist {
+impl Default for DenylistSource {
     fn default() -> Self {
-        Denylist {
+        DenylistSource {
             base: "https://raw.githubusercontent.com/usestrix/malicious-packages/packages".into(),
-            token: "FIREWALL_GITHUB_TOKEN".into(),
+            token: None,
+            revision: "https://api.github.com/repos/usestrix/malicious-packages/commits/packages"
+                .into(),
+            poll_secs: 10,
         }
     }
 }

@@ -3,7 +3,7 @@ pub mod registries;
 
 pub use registries::Package;
 
-use crate::state::FirewallState;
+use crate::Firewall;
 use filters::{consult, Verdict};
 
 pub struct Target {
@@ -24,28 +24,30 @@ pub enum Decision {
     Block { eco: &'static str, pkg: Package, filter: &'static str, reason: String },
 }
 
-pub async fn decide(request_target: &str, state: &FirewallState) -> Decision {
+pub async fn decide(request_target: &str, firewall: &Firewall) -> Decision {
     let path = request_target.split_once('?').map_or(request_target, |(path, _)| path);
-    let Some((registry, rest)) = state.match_path(path) else {
+    let Some((registry, rest)) = firewall.match_path(path) else {
         return Decision::Unroutable;
     };
 
-    let resolved = state.resolve(registry, rest);
+    let resolved = firewall.resolve(registry, rest);
     let target = Target {
         eco: registry.eco,
         upstream: format!("{}{}", registry.upstream, rest),
-        rewrite: resolved.rewrite.map(|(from, to)| (from.to_string(), state.config.local_url(to))),
+        rewrite: resolved
+            .rewrite
+            .map(|(from, to)| (from.to_string(), firewall.config.local_url(to))),
     };
 
     let eco = registry.eco;
     let check = match resolved.pkg {
         None => Check::NoPackage,
-        Some(pkg) => match consult(state, registry, &pkg).await {
+        Some(pkg) => match consult(firewall, registry, &pkg).await {
             None => Check::Allowed(pkg),
             Some((filter, Verdict::Deny(reason))) => {
                 return Decision::Block { eco, pkg, filter, reason }
             }
-            Some((filter, Verdict::Unknown(e))) if !state.config.fail_open => {
+            Some((filter, Verdict::Unknown(e))) if !firewall.config.fail_open => {
                 let reason = format!("could not be checked by {filter} ({e})");
                 return Decision::Block { eco, pkg, filter, reason };
             }
@@ -57,10 +59,10 @@ pub async fn decide(request_target: &str, state: &FirewallState) -> Decision {
     Decision::Allow { target, check }
 }
 
-pub async fn screen(url: &str, state: &FirewallState) -> Option<String> {
-    let (registry, rest) = state.match_upstream(url)?;
-    let pkg = state.resolve(registry, rest).pkg?;
-    match consult(state, registry, &pkg).await {
+pub async fn screen(url: &str, firewall: &Firewall) -> Option<String> {
+    let (registry, rest) = firewall.match_upstream(url)?;
+    let pkg = firewall.resolve(registry, rest).pkg?;
+    match consult(firewall, registry, &pkg).await {
         Some((_, Verdict::Deny(reason))) => {
             Some(format!("{} {} {reason}", registry.eco, pkg.label()))
         }

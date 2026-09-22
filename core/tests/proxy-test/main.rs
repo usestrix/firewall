@@ -1,13 +1,12 @@
 mod probe;
 
 use firewall::aliasing;
-use firewall::FirewallState;
+use firewall::FirewallConfig;
 use probe::Outcome;
-use std::sync::Arc;
 
 fn main() -> std::io::Result<()> {
     firewall::init_logging();
-    let port = aliasing::spawn(0, Arc::new(FirewallState::default()))?;
+    let port = aliasing::spawn(0, FirewallConfig::load()?)?;
     println!("firewall proxy on {}\n", firewall::local_url(port, ""));
 
     let results = probe::all(port);

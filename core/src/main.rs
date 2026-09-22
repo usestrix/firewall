@@ -1,8 +1,7 @@
 use bpaf::{any, choice, pure, OptionParser, Parser};
 use firewall::aliasing::{self, Invocation, Manager, MANAGERS};
-use firewall::{config, proxy, FirewallConfig, FirewallState};
+use firewall::{config, proxy, FirewallConfig};
 use std::io::ErrorKind;
-use std::sync::Arc;
 use tracing::{error, info};
 
 enum SubCommand {
@@ -49,18 +48,18 @@ fn main() {
     }
 }
 
-fn state() -> FirewallState {
+fn load() -> FirewallConfig {
     match FirewallConfig::load() {
-        Ok(config) => FirewallState::new(config),
+        Ok(config) => config,
         Err(e) => fail(&format!("could not read the config: {e}")),
     }
 }
 
 fn serve() -> ! {
-    let state = state();
-    let port = state.config.port;
-    banner(&state.config);
-    match proxy::serve(state) {
+    let config = load();
+    let port = config.port;
+    banner(&config);
+    match proxy::serve(config) {
         Ok(()) => std::process::exit(0),
         Err(e) if e.kind() == ErrorKind::AddrInUse => {
             let where_ = config::path().map_or("the config".into(), |p| p.display().to_string());
@@ -74,8 +73,7 @@ fn serve() -> ! {
 }
 
 fn run(invocation: Invocation) -> ! {
-    let state = Arc::new(state());
-    let port = match aliasing::spawn(0, state) {
+    let port = match aliasing::spawn(0, load()) {
         Ok(port) => port,
         Err(e) => fail(&format!("could not start the proxy: {e}")),
     };

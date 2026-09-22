@@ -1,11 +1,12 @@
+use crate::http::{blocked, reply, text};
 use crate::policies::{self, Check, Decision};
-use crate::state::FirewallState;
+use crate::{Firewall, FirewallConfig};
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::header::CONTENT_TYPE;
 use rama::http::server::HttpServer;
 use rama::http::service::client::HttpClientExt;
-use rama::http::{Body, Request, Response, StatusCode};
+use rama::http::{Request, Response};
 use rama::rt::Executor;
 use rama::service::service_fn;
 use rama::tcp::server::TcpListener;
@@ -13,38 +14,38 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use tracing::{info, info_span, warn, Instrument};
 
-pub fn serve(state: FirewallState) -> std::io::Result<()> {
-    let bound = std::net::TcpListener::bind(("127.0.0.1", state.config.port))?;
+pub fn serve(config: FirewallConfig) -> std::io::Result<()> {
+    let bound = std::net::TcpListener::bind(("127.0.0.1", config.port))?;
     bound.set_nonblocking(true)?;
-    let state = Arc::new(state);
     crate::runtime()?.block_on(async move {
+        let firewall = Arc::new(Firewall::new(config));
         let exec = Executor::default();
         let listener = TcpListener::try_from_std_tcp_listener(bound, exec.clone())?;
         let server = HttpServer::auto(exec).service(service_fn(move |req: Request| {
-            let state = Arc::clone(&state);
-            async move { Ok::<_, Infallible>(handle(req, &state).await) }
+            let firewall = Arc::clone(&firewall);
+            async move { Ok::<_, Infallible>(handle(req, &firewall).await) }
         }));
         listener.serve(server).await;
         Ok(())
     })
 }
 
-async fn handle(req: Request, state: &FirewallState) -> Response {
+async fn handle(req: Request, firewall: &Firewall) -> Response {
     let target = req.uri().request_target().into_owned();
     let span = info_span!("request", method = %req.method(), %target);
-    screen(target, state).instrument(span).await
+    screen(target, firewall).instrument(span).await
 }
 
-async fn screen(target: String, state: &FirewallState) -> Response {
-    match policies::decide(&target, state).await {
+async fn screen(target: String, firewall: &Firewall) -> Response {
+    match policies::decide(&target, firewall).await {
         Decision::Unroutable => {
             warn!("no route, unknown prefix");
-            reply(404, "text/plain", b"No route.\n".to_vec())
+            text(404, "No route.\n")
         }
         Decision::Block { eco, pkg, filter, reason } => {
-            let msg = format!("blocked by firewall: {eco} {} {reason}", pkg.label());
-            warn!(%filter, "{msg}");
-            reply(403, "text/plain", format!("{msg}\n").into_bytes())
+            let reason = format!("{eco} {} {reason}", pkg.label());
+            warn!(%filter, "blocked by firewall: {reason}");
+            blocked(&reason)
         }
         Decision::Allow { target, check } => {
             match &check {
@@ -69,7 +70,7 @@ async fn mirror(target: &policies::Target) -> Response {
         Ok(response) => response,
         Err(e) => {
             warn!(error = %e, "upstream request failed");
-            return reply(502, "text/plain", e.to_string().into_bytes());
+            return text(502, &e.to_string());
         }
     };
 
@@ -85,7 +86,7 @@ async fn mirror(target: &policies::Target) -> Response {
         Ok(collected) => collected.to_bytes().to_vec(),
         Err(e) => {
             warn!(error = %e, "could not read the upstream body");
-            return reply(502, "text/plain", e.to_string().into_bytes());
+            return text(502, &e.to_string());
         }
     };
 
@@ -100,14 +101,6 @@ async fn mirror(target: &policies::Target) -> Response {
 
     info!(status, size = %human(body.len()), rewrites, "served");
     reply(status, &ctype, body)
-}
-
-fn reply(status: u16, ctype: &str, body: Vec<u8>) -> Response {
-    Response::builder()
-        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY))
-        .header(CONTENT_TYPE, ctype)
-        .body(Body::from(body))
-        .expect("status and content type are valid")
 }
 
 fn human(n: usize) -> String {

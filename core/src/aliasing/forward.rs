@@ -1,12 +1,13 @@
+use crate::http::{blocked, https_url, text};
 use crate::policies;
-use crate::state::FirewallState;
+use crate::{Firewall, FirewallConfig};
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
-use rama::http::header::{CONTENT_LENGTH, HOST};
+use rama::http::header::CONTENT_LENGTH;
 use rama::http::layer::decompression::DecompressionLayer;
 use rama::http::layer::remove_header::{RemoveRequestHeaderLayer, RemoveResponseHeaderLayer};
 use rama::http::server::HttpServer;
-use rama::http::{Body, Method, Request, Response, StatusCode};
+use rama::http::{Body, Method, Request, Response};
 use rama::rt::Executor;
 use rama::service::service_fn;
 use rama::tcp::server::TcpListener;
@@ -17,7 +18,7 @@ use tracing::{error, info, warn};
 
 /// Speaks plaintext to clients and HTTPS upstream, so the full URL is visible
 /// without a certificate.
-pub fn spawn(port: u16, state: Arc<FirewallState>) -> std::io::Result<u16> {
+pub fn spawn(port: u16, config: FirewallConfig) -> std::io::Result<u16> {
     let bound = std::net::TcpListener::bind(("127.0.0.1", port))?;
     let local = bound.local_addr()?.port();
     bound.set_nonblocking(true)?;
@@ -25,6 +26,7 @@ pub fn spawn(port: u16, state: Arc<FirewallState>) -> std::io::Result<u16> {
     let runtime = crate::runtime()?;
     std::thread::spawn(move || {
         runtime.block_on(async move {
+            let firewall = Arc::new(Firewall::new(config));
             let exec = Executor::default();
             let listener = match TcpListener::try_from_std_tcp_listener(bound, exec.clone()) {
                 Ok(listener) => listener,
@@ -33,8 +35,8 @@ pub fn spawn(port: u16, state: Arc<FirewallState>) -> std::io::Result<u16> {
             let server = HttpServer::auto(exec).service(
                 (RemoveResponseHeaderLayer::hop_by_hop(), RemoveRequestHeaderLayer::hop_by_hop())
                     .into_layer(service_fn(move |req: Request| {
-                        let state = Arc::clone(&state);
-                        async move { handle(req, &state).await }
+                        let firewall = Arc::clone(&firewall);
+                        async move { handle(req, &firewall).await }
                     })),
             );
             listener.serve(server).await;
@@ -43,7 +45,7 @@ pub fn spawn(port: u16, state: Arc<FirewallState>) -> std::io::Result<u16> {
     Ok(local)
 }
 
-async fn handle(req: Request, state: &FirewallState) -> Result<Response, Infallible> {
+async fn handle(req: Request, firewall: &Firewall) -> Result<Response, Infallible> {
     if req.method() == Method::CONNECT {
         warn!(uri = %req.uri(), "refused CONNECT, only plain HTTP can be screened");
         return Ok(text(
@@ -52,23 +54,18 @@ async fn handle(req: Request, state: &FirewallState) -> Result<Response, Infalli
         ));
     }
 
-    let Some(url) = upstream_url(&req) else {
+    let Some(url) = https_url(&req) else {
         warn!(method = %req.method(), uri = %req.uri(), "unroutable, expected an absolute URL");
         return Ok(text(400, "firewall: expected an absolute URL\n"));
     };
 
-    if let Some(reason) = policies::screen(&url, state).await {
+    if let Some(reason) = policies::screen(&url, firewall).await {
         warn!(method = %req.method(), %url, %reason, "blocked");
-        return Ok(text(403, &format!("blocked by firewall: {reason}\n")));
-    }
-
-    // Over plain HTTP the bytes could be swapped after OSV cleared them.
-    if !url.starts_with("https://") {
-        unreachable!("upstream fetch is not https: {url}");
+        return Ok(blocked(&reason));
     }
 
     info!(method = %req.method(), %url, "forwarding");
-    let index = state.is_index_url(&url);
+    let index = firewall.is_index_url(&url);
     let (mut parts, body) = req.into_parts();
     let Ok(uri) = url.parse() else {
         return Ok(text(400, "firewall: expected an absolute URL\n"));
@@ -94,33 +91,16 @@ async fn handle(req: Request, state: &FirewallState) -> Result<Response, Infalli
     };
     // The rewrite changes the length, so let the server state it again.
     parts.headers.remove(CONTENT_LENGTH);
-    Ok(Response::from_parts(parts, Body::from(downgrade(state, collected.to_bytes().to_vec()))))
-}
-
-fn text(status: u16, body: &str) -> Response {
-    Response::builder()
-        .status(StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_GATEWAY))
-        .header("content-type", "text/plain")
-        .body(Body::from(body.to_string()))
-        .expect("status and content type are valid")
-}
-
-pub fn upstream_url(req: &Request) -> Option<String> {
-    let path = req.uri().request_target();
-    let host = match req.uri().authority() {
-        Some(authority) => authority.to_string(),
-        None => req.headers().get(HOST)?.to_str().ok()?.to_string(),
-    };
-    Some(format!("https://{host}{path}"))
+    Ok(Response::from_parts(parts, Body::from(downgrade(firewall, collected.to_bytes().to_vec()))))
 }
 
 /// crates.io serves config.json as octet-stream, so UTF-8 validity decides what is text.
-pub fn downgrade(state: &FirewallState, body: Vec<u8>) -> Vec<u8> {
+pub fn downgrade(firewall: &Firewall, body: Vec<u8>) -> Vec<u8> {
     let mut text = match String::from_utf8(body) {
         Ok(text) => text,
         Err(raw) => return raw.into_bytes(),
     };
-    for host in state.hosts() {
+    for host in firewall.hosts() {
         text = text.replace(&format!("https://{host}"), &format!("http://{host}"));
     }
     text.into_bytes()
