@@ -1,3 +1,6 @@
+mod install;
+mod uninstall;
+
 use crate::config::FirewallConfig;
 use crate::mitm;
 use crate::Firewall;
@@ -12,20 +15,17 @@ use rama::net::apple::networkextension::tproxy::{
     TransparentProxyHandler, TransparentProxyHandlerFactory, TransparentProxyNetworkRule,
     TransparentProxyRuleProtocol, TransparentProxyServiceContext,
 };
-use rama::net::apple::networkextension::{
-    system_keychain, transparent_proxy_ffi, NwTcpStream, TcpFlow,
-};
+use rama::net::apple::networkextension::{transparent_proxy_ffi, NwTcpStream, TcpFlow};
 use rama::rt::Executor;
 use rama::telemetry::tracing::apple::oslog::{OsLogLayer, Privacy};
 use rama::{Layer, Service};
 use std::convert::Infallible;
-use std::future::Future;
 use std::sync::Arc;
-use tracing::{info, warn};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
 const BUNDLE_ID: &str = "com.strix.firewall";
+const KEYCHAIN_SERVICE: &str = BUNDLE_ID;
 const KEYCHAIN_ACCOUNT: &str = "ca";
 
 #[derive(Clone)]
@@ -53,27 +53,28 @@ impl TransparentProxyHandler for Handler {
         TransparentProxyConfig::new().with_rules(rules)
     }
 
-    /// The installer asks for the CA over this channel; nothing else is served.
-    fn handle_app_message(
-        &self,
-        _exec: Executor,
-        _message: Bytes,
-    ) -> impl Future<Output = Option<Bytes>> + Send + '_ {
-        std::future::ready(Some(Bytes::from(self.ca.pem.clone())))
+    /// The installer drives setup over this channel; an empty reply is indistinguishable
+    /// from no reply on the Swift side, so every answer carries something.
+    async fn handle_app_message(&self, _exec: Executor, message: Bytes) -> Option<Bytes> {
+        let message = String::from_utf8_lossy(&message).into_owned();
+        Some(Bytes::from(match message.as_str() {
+            "ca" => self.ca.pem.clone(),
+            "uninstall" => match uninstall::certificate_authority(&self.ca) {
+                Ok(()) => "ok".to_owned(),
+                Err(error) => format!("error: {error}"),
+            },
+            other => format!("error: unknown message {other}"),
+        }))
     }
 
-    fn match_tcp_flow(
+    async fn match_tcp_flow(
         &self,
         _exec: Executor,
         meta: TransparentProxyFlowMeta,
-    ) -> impl Future<
-        Output = FlowAction<
-            impl Service<BridgeIo<TcpFlow, NwTcpStream>, Output = (), Error = Infallible>,
-        >,
-    > + Send
-           + '_ {
+    ) -> FlowAction<impl Service<BridgeIo<TcpFlow, NwTcpStream>, Output = (), Error = Infallible>>
+    {
         let service = ConsumeErrLayer::trace_as_debug().into_layer(self.service.clone());
-        std::future::ready(FlowAction::Intercept { service, meta })
+        FlowAction::Intercept { service, meta }
     }
 }
 
@@ -84,36 +85,20 @@ impl TransparentProxyHandlerFactory for Factory {
     type Handler = Handler;
     type Error = BoxError;
 
-    fn create_transparent_proxy_handler(
+    /// The engine enters its runtime only to poll, so the work belongs in the
+    /// future: building it happens outside, where a spawn would panic.
+    async fn create_transparent_proxy_handler(
         &self,
         ctx: TransparentProxyServiceContext,
-    ) -> impl Future<Output = Result<Self::Handler, Self::Error>> + Send {
-        std::future::ready(handler(ctx.executor.clone()))
+    ) -> Result<Self::Handler, Self::Error> {
+        handler(ctx.executor)
     }
-}
-
-/// Trust is installed once, so the CA is re-minted only when the screened hosts change.
-fn load_or_mint(hosts: &[&str]) -> Result<mitm::CertificateAuthority, BoxError> {
-    if let Some(blob) = system_keychain::load_secret(BUNDLE_ID, KEYCHAIN_ACCOUNT)? {
-        let stored = std::str::from_utf8(&blob).ok();
-        match stored.and_then(|b| mitm::CertificateAuthority::from_blob(b, hosts)) {
-            Some(ca) => {
-                info!(?hosts, "restored the CA from the system keychain");
-                return Ok(ca);
-            }
-            None => warn!("stored CA does not match the screened hosts, minting a new one"),
-        }
-    }
-    let ca = mitm::CertificateAuthority::generate(hosts)?;
-    system_keychain::store_secret(BUNDLE_ID, KEYCHAIN_ACCOUNT, ca.to_blob().as_bytes())?;
-    info!(?hosts, "minted a name-constrained CA");
-    Ok(ca)
 }
 
 fn handler(exec: Executor) -> Result<Handler, BoxError> {
     let firewall = Arc::new(Firewall::new(FirewallConfig::load()?));
     let hosts = firewall.hosts();
-    let ca = Arc::new(load_or_mint(&hosts)?);
+    let ca = Arc::new(install::certificate_authority(&hosts)?);
     let service = mitm::mitm_service(firewall, &ca, exec);
     Ok(Handler { ca, hosts, service })
 }
@@ -121,6 +106,8 @@ fn handler(exec: Executor) -> Result<Handler, BoxError> {
 /// stderr is invisible in a system extension, so events go to the unified log:
 /// `log stream --predicate 'subsystem == "com.strix.firewall"'`.
 fn init(_config: Option<&TransparentProxyInitConfig>) -> bool {
+    // A panic crossing the FFI boundary aborts, and its message would go to stderr.
+    std::panic::set_hook(Box::new(|panic| tracing::error!("{panic}")));
     if let Ok(oslog) = OsLogLayer::new(BUNDLE_ID, "extension") {
         let oslog = oslog.with_privacy(Privacy::Public);
         let _ = tracing_subscriber::registry().with(crate::log_filter()).with(oslog).try_init();
