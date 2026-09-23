@@ -8,7 +8,6 @@ use rama::bytes::Bytes;
 use rama::error::BoxError;
 use rama::io::BridgeIo;
 use rama::layer::ConsumeErrLayer;
-use rama::net::address::Domain;
 use rama::net::apple::networkextension::ffi::tproxy::TransparentProxyInitConfig;
 use rama::net::apple::networkextension::tproxy::{
     FlowAction, TransparentProxyConfig, TransparentProxyEngineBuilder, TransparentProxyFlowMeta,
@@ -36,21 +35,14 @@ struct Handler {
 }
 
 impl TransparentProxyHandler for Handler {
-    /// Claim only the registries we screen; every other flow stays in the kernel.
+    // We need to peek into the ClientHello, so we have to intercept all HTTPS traffic
     fn transparent_proxy_config(&self) -> TransparentProxyConfig {
-        let mut rules = Vec::with_capacity(self.hosts.len() * 2);
-        for host in &self.hosts {
-            // Plaintext installs are screened as well, so port 80 is claimed too.
-            for port in [80, 443] {
-                rules.push(
-                    TransparentProxyNetworkRule::any()
-                        .with_remote_network(Domain::from_static(host))
-                        .with_remote_port(port)
-                        .with_protocol(TransparentProxyRuleProtocol::Tcp),
-                );
-            }
-        }
-        TransparentProxyConfig::new().with_rules(rules)
+        let tcp_rule = |port| {
+            TransparentProxyNetworkRule::any()
+                .with_remote_port(port)
+                .with_protocol(TransparentProxyRuleProtocol::Tcp)
+        };
+        TransparentProxyConfig::new().with_rules(vec![tcp_rule(80), tcp_rule(443)])
     }
 
     /// The installer drives setup over this channel; an empty reply is indistinguishable
@@ -73,6 +65,12 @@ impl TransparentProxyHandler for Handler {
         meta: TransparentProxyFlowMeta,
     ) -> FlowAction<impl Service<BridgeIo<TcpFlow, NwTcpStream>, Output = (), Error = Infallible>>
     {
+        // A named flow reflects what the client resolved, so a non-registry name
+        // can be declined unpeeked — at the cost of a client naming its own host.
+        let hostname = meta.remote_hostname.as_deref();
+        if hostname.is_some_and(|host| !self.hosts.contains(&host)) {
+            return FlowAction::Passthrough;
+        }
         let service = ConsumeErrLayer::trace_as_debug().into_layer(self.service.clone());
         FlowAction::Intercept { service, meta }
     }
