@@ -1,0 +1,116 @@
+name: Firewall
+options:
+  bundleIdPrefix: com.strix.firewall
+  deploymentTarget: { macOS: "13.0" }
+  createIntermediateGroups: true
+
+settings:
+  base:
+    CARGO_PROFILE: release
+    "CARGO_PROFILE[config=Debug]": debug
+    "LIBRARY_SEARCH_PATHS[arch=arm64]": $(SRCROOT)/../core/target/aarch64-apple-darwin/$(CARGO_PROFILE)
+    "LIBRARY_SEARCH_PATHS[arch=x86_64]": $(SRCROOT)/../core/target/x86_64-apple-darwin/$(CARGO_PROFILE)
+    ARCHS: arm64
+    "ONLY_ACTIVE_ARCH[config=Debug]": "YES"
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ${TEAM}
+    ENABLE_HARDENED_RUNTIME: "YES"
+    # The Debug dylib split confuses sysextd validation.
+    ENABLE_DEBUG_DYLIB: "NO"
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: Apple Development
+
+packages:
+  Rama:
+    url: https://github.com/plabayo/rama.git
+    # The rama-0.4.0 tag: the Swift bridge and the Rust crate share one FFI contract.
+    revision: e588bafbf58afe5cf2ef8a26735bec563e518344
+
+targets:
+  Extension:
+    type: system-extension
+    platform: macOS
+    sources: [Extension]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.strix.firewall.extension
+        PRODUCT_NAME: com.strix.firewall.extension
+        PRODUCT_MODULE_NAME: Extension
+        OTHER_LDFLAGS: [-lfirewall, -framework, NetworkExtension, -lz]
+    info:
+      path: Extension/Info.plist
+      properties:
+        CFBundlePackageType: SYSX
+        CFBundleShortVersionString: "0.1"
+        NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
+        NetworkExtension:
+          NEMachServiceName: ${TEAM}.com.strix.firewall.extension
+          NEProviderClasses:
+            com.apple.networkextension.app-proxy: RamaAppleNetworkExtension.RamaTransparentProxyProvider
+    entitlements:
+      path: Extension/Extension.entitlements
+      properties:
+        # Xcode injects these from the profile; we sign by hand, and NE's IPC
+        # check rejects a caller without them.
+        com.apple.application-identifier: ${TEAM}.com.strix.firewall.extension
+        com.apple.developer.team-identifier: ${TEAM}
+        com.apple.developer.networking.networkextension:
+          - app-proxy-provider
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+    dependencies:
+      - package: Rama
+        product: RamaAppleNetworkExtension
+      # system_keychain references the Secure Enclave bridge even when unused.
+      - package: Rama
+        product: RamaAppleSecureEnclave
+    preBuildScripts:
+      - name: Build Rust core
+        basedOnDependencyAnalysis: false
+        script: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          unset CC CXX CFLAGS CXXFLAGS
+          # ring's C build needs a sysroot, and Xcode's SDKROOT can point elsewhere.
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          cd "$SRCROOT/../core"
+          for arch in $ARCHS; do
+            case $arch in
+              arm64|arm64e) triple=aarch64-apple-darwin ;;
+              x86_64)       triple=x86_64-apple-darwin ;;
+              *) echo "unsupported arch: $arch" >&2; exit 1 ;;
+            esac
+            rustup target add $triple >/dev/null 2>&1 || true
+            cargo rustc --lib --crate-type staticlib --target $triple \
+              $([ "$CONFIGURATION" = Debug ] || echo --release)
+          done
+
+  Installer:
+    type: application
+    platform: macOS
+    sources:
+      - Installer
+      - path: ../assets/logo-transparent.png
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.strix.firewall
+    info:
+      path: Installer/Info.plist
+      properties:
+        CFBundleShortVersionString: "0.1"
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
+        LSUIElement: true
+    entitlements:
+      path: Installer/Installer.entitlements
+      properties:
+        com.apple.application-identifier: ${TEAM}.com.strix.firewall
+        com.apple.developer.team-identifier: ${TEAM}
+        com.apple.developer.system-extension.install: true
+        com.apple.developer.networking.networkextension:
+          - app-proxy-provider
+        com.apple.security.network.client: true
+    dependencies:
+      - target: Extension
+        embed: true
+        codeSign: true

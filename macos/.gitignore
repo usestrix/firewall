@@ -1,0 +1,7 @@
+build
+Firewall.xcodeproj
+.env
+Extension/Extension.entitlements
+Extension/Info.plist
+Installer/Installer.entitlements
+Installer/Info.plist
