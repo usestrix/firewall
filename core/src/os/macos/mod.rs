@@ -1,3 +1,4 @@
+mod enclave;
 mod install;
 mod uninstall;
 
@@ -96,8 +97,9 @@ impl TransparentProxyHandlerFactory for Factory {
 fn handler(exec: Executor) -> Result<Handler, BoxError> {
     let firewall = Arc::new(Firewall::new(FirewallConfig::load()?));
     let hosts = firewall.hosts();
-    let ca = Arc::new(install::certificate_authority(&hosts)?);
-    let service = mitm::mitm_service(firewall, &ca, exec);
+    let signer: mitm::CaSigner = Arc::new(enclave::EnclaveKey::load_or_create()?);
+    let ca = Arc::new(install::certificate_authority(&hosts, &*signer)?);
+    let service = mitm::mitm_service(firewall, &ca, signer, exec);
     Ok(Handler { ca, hosts, service })
 }
 

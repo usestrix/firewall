@@ -659,11 +659,14 @@ name = "firewall"
 version = "0.1.0"
 dependencies = [
  "bpaf",
+ "core-foundation",
  "directories",
  "percent-encoding",
  "rama",
  "rcgen",
  "regex",
+ "security-framework",
+ "security-framework-sys",
  "semver",
  "serde",
  "serde_json",

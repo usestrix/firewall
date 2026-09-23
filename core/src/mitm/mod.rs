@@ -3,7 +3,7 @@ mod issuer;
 mod route;
 mod screen;
 
-pub use ca::CertificateAuthority;
+pub use ca::{CaSigner, CertificateAuthority};
 
 use crate::Firewall;
 use issuer::ConstrainedCertIssuer;
@@ -30,10 +30,11 @@ type InterceptService =
 pub fn mitm_service(
     firewall: Arc<Firewall>,
     ca: &CertificateAuthority,
+    signer: CaSigner,
     exec: Executor,
 ) -> MitmService {
     let hosts = firewall.hosts();
-    let issuer = ConstrainedCertIssuer::new(ca.crt.clone(), ca.key.clone(), hosts.clone());
+    let issuer = ConstrainedCertIssuer::new(ca.crt.clone(), signer, hosts.clone());
 
     // Plaintext traffic relay
     let relay = Arc::new(HttpMitmRelay::new(exec).with_http_middleware(FirewallLayer { firewall }));

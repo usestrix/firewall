@@ -132,9 +132,7 @@ impl AffectedVersions {
 }
 
 /// An index request names no version, so it answers only for advisories covering every
-/// version; anything narrower would flag the clean versions too.
-/// This is important for allowing requests to indexes through. (downloads themselves
-/// always carry versions)
+/// version; a narrower one would flag the package's clean versions too.
 pub fn mal_ids<'a>(advisories: &'a [Advisory], version: Option<&str>) -> Vec<&'a str> {
     advisories
         .iter()
