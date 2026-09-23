@@ -2,7 +2,7 @@ use firewall::Firewall;
 
 fn at(path: &str) -> (Option<String>, Option<String>, bool) {
     let firewall = Firewall::default();
-    let (registry, rest) = firewall.match_path(path).expect("no registry matched");
+    let (registry, rest) = firewall.match_on(path, |r| r.prefix).expect("no registry matched");
     let resolved = firewall.resolve(registry, rest);
     let (name, version) = match resolved.pkg {
         Some(p) => (Some(p.name), p.version),

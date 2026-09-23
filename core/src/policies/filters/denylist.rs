@@ -17,7 +17,6 @@ use tracing::{info, warn};
 /// The GitHub API turns away requests without a user agent.
 const AGENT: &str = "strix-firewall";
 
-/// Which versions of a package one advisory covers.
 #[derive(Debug, PartialEq)]
 pub enum AffectedVersions {
     All,
@@ -31,10 +30,8 @@ pub struct Advisory {
     pub affected: AffectedVersions,
 }
 
-/// Flagged package names and the advisories filed against them.
 pub type Advisories = HashMap<String, Vec<Advisory>>;
 
-/// A parsed list, or why it is missing.
 pub type FetchedDenylist = Result<Advisories, String>;
 
 /// One list per ecosystem, downloaded when a package from it is first screened.

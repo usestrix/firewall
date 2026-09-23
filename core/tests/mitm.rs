@@ -1,7 +1,6 @@
 use firewall::mitm;
 use rcgen::KeyPair;
 
-/// Off macOS the key is simply held in memory; where it lives is the caller's business.
 fn signer() -> KeyPair {
     KeyPair::generate().expect("generate a key")
 }
@@ -28,20 +27,19 @@ fn stored_ca_round_trips_and_rejects_a_changed_host_set() {
     let hosts = ["registry.npmjs.org", "pypi.org"];
     let signer = signer();
     let ca = mitm::CertificateAuthority::generate(&hosts, &signer);
-    let blob = ca.expect("mint a ca").to_blob();
+    let blob = ca.expect("mint a ca").to_blob(&hosts);
 
     let restored = mitm::CertificateAuthority::from_blob(&blob, &hosts, &signer);
-    assert_eq!(restored.expect("restore the ca").to_blob(), blob);
+    assert_eq!(restored.expect("restore the ca").to_blob(&hosts), blob);
     assert!(mitm::CertificateAuthority::from_blob(&blob, &["npmjs.org"], &signer).is_none());
 }
 
-/// The stored certificate names a public key; a signer holding a different one would
-/// issue leaves that chain to nothing.
+/// Leaves signed by a different key would not verify against the stored certificate.
 #[test]
 fn stored_ca_is_rejected_when_the_signing_key_changed() {
     let hosts = ["registry.npmjs.org", "pypi.org"];
     let ca = mitm::CertificateAuthority::generate(&hosts, &signer());
-    let blob = ca.expect("mint a ca").to_blob();
+    let blob = ca.expect("mint a ca").to_blob(&hosts);
 
     assert!(mitm::CertificateAuthority::from_blob(&blob, &hosts, &signer()).is_none());
 }

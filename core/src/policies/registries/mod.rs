@@ -35,7 +35,7 @@ pub struct Pattern {
     pub rewrite: Option<(&'static str, &'static str)>,
 }
 
-/// Keyed both ways: the mirror matches on `prefix`, the alias proxy on `upstream`.
+/// Requests to the local server match on `prefix`; intercepted URLs match on `upstream`.
 #[derive(Debug)]
 pub struct Registry {
     pub prefix: &'static str,
@@ -67,11 +67,10 @@ pub struct Resolved {
     pub rewrite: Option<(&'static str, &'static str)>,
 }
 
-/// The ones we ship with; `Firewall` reads this once and everything goes through it.
 pub static BUILT_IN: &[&Registry] =
     &[&NPM, &PYPI_FILES, &PYPI, &CARGO_DL, &CARGO_INDEX, &CRATES_API, &GEM, &GO];
 
-/// The patterns are compiled once into `Firewall`, which is where this is called from.
+/// `patterns` is `registry.patterns` compiled, in the same order.
 pub fn resolve(registry: &'static Registry, rest: &str, patterns: &[Regex]) -> Resolved {
     for (pattern, re) in registry.patterns.iter().zip(patterns) {
         let Some(caps) = re.captures(rest) else {

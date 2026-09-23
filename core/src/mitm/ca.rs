@@ -10,13 +10,9 @@ use std::sync::Arc;
 /// business: the Secure Enclave on macOS, memory anywhere else.
 pub type CaSigner = Arc<dyn SigningKey + Send + Sync>;
 
-/// The private half never leaves whatever holds it; only `pem` is ever handed out.
 pub struct CertificateAuthority {
     pub crt: X509,
-    /// What the installer hands to each package manager.
     pub pem: String,
-    /// The screened hosts, comma-joined, exactly as `to_blob` writes them.
-    hosts: String,
 }
 
 impl CertificateAuthority {
@@ -24,34 +20,31 @@ impl CertificateAuthority {
     /// verifier that cannot enforce it rejects the chain instead of ignoring the limit.
     pub fn generate(hosts: &[&str], signer: &dyn SigningKey) -> Result<Self, BoxError> {
         let pem = params(hosts).self_signed(&signer)?.pem();
-        Self::new(pem, hosts.join(","))
+        Self::new(pem)
     }
 
-    /// Keychain form: the screened hosts, then the certificate. No key, so this is
-    /// only as sensitive as the certificate everyone already trusts.
-    pub fn to_blob(&self) -> String {
-        format!("{}\n{}", self.hosts, self.pem)
+    /// Keychain form: the hosts line, then the PEM. Holds no key.
+    pub fn to_blob(&self, hosts: &[&str]) -> String {
+        format!("{}\n{}", hosts.join(","), self.pem)
     }
 
-    /// Rejects a stored CA whose name constraints no longer cover exactly `hosts`.
+    /// `None` if the stored hosts differ from `hosts` or the certificate is for another key.
     pub fn from_blob(blob: &str, hosts: &[&str], signer: &dyn SigningKey) -> Option<Self> {
         let (stored, pem) = blob.split_once('\n')?;
         if stored != hosts.join(",") {
             return None;
         }
-        let ca = Self::new(pem.to_owned(), stored.to_owned()).ok()?;
-        // A certificate the signer cannot sign for issues leaves nothing will chain to.
+        let ca = Self::new(pem.to_owned()).ok()?;
         let held = ca.crt.public_key().ok()?.public_key_to_der().ok()?;
         (held == signer.subject_public_key_info()).then_some(ca)
     }
 
-    fn new(pem: String, hosts: String) -> Result<Self, BoxError> {
-        Ok(Self { crt: X509::from_pem(pem.as_bytes())?, pem, hosts })
+    fn new(pem: String) -> Result<Self, BoxError> {
+        Ok(Self { crt: X509::from_pem(pem.as_bytes())?, pem })
     }
 }
 
-/// Shared by minting and by issuing, which needs the same subject and key usages
-/// to name itself as the issuer.
+/// Also used by the issuer, whose issuer name must match the CA's subject.
 pub fn params(hosts: &[&str]) -> CertificateParams {
     let mut name = DistinguishedName::new();
     name.push(DnType::CommonName, "Strix Firewall");

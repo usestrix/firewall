@@ -22,7 +22,6 @@ pub fn local_url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{port}{path}")
 }
 
-/// Logs go to stderr so stdout stays free for the program's own output.
 pub fn init_logging() {
     fmt().with_env_filter(log_filter()).with_target(false).with_writer(std::io::stderr).init();
 }

@@ -6,8 +6,6 @@ use crate::policies::registries::*;
 use regex::Regex;
 use std::collections::HashMap;
 
-/// A running firewall: its config, the registries it screens, the compiled form of
-/// their patterns, and the denylists it has fetched so far. Shared by every request.
 pub struct Firewall {
     pub config: FirewallConfig,
     patterns: HashMap<&'static str, Vec<Regex>>,
@@ -33,19 +31,13 @@ impl Firewall {
         Firewall { config, patterns, filters }
     }
 
-    pub fn match_path<'a>(&self, path: &'a str) -> Option<(&'static Registry, &'a str)> {
-        self.config
-            .registries
-            .iter()
-            .find_map(|r| path.strip_prefix(r.prefix).map(|rest| (*r, rest)))
-    }
-
-    /// The alias path sees upstream URLs, so registries match on where they point.
-    pub fn match_upstream<'a>(&self, url: &'a str) -> Option<(&'static Registry, &'a str)> {
-        self.config
-            .registries
-            .iter()
-            .find_map(|r| url.strip_prefix(r.upstream).map(|rest| (*r, rest)))
+    /// The registry whose `key` field starts `url`, and the rest of `url`.
+    pub fn match_on<'a>(
+        &self,
+        url: &'a str,
+        key: fn(&Registry) -> &'static str,
+    ) -> Option<(&'static Registry, &'a str)> {
+        self.config.registries.iter().find_map(|r| url.strip_prefix(key(r)).map(|rest| (*r, rest)))
     }
 
     /// Every host we screen: what the proxy rewrites and what the extension claims.

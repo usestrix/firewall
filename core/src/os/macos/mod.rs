@@ -27,6 +27,8 @@ use tracing_subscriber::util::SubscriberInitExt;
 const BUNDLE_ID: &str = "com.strix.firewall";
 const KEYCHAIN_SERVICE: &str = BUNDLE_ID;
 const KEYCHAIN_ACCOUNT: &str = "ca";
+/// Must match `macos/LaunchAgents/com.strix.firewall.env.plist`, which points npm at it.
+const CA_FILE: &str = "/Library/Application Support/Firewall/ca.pem";
 
 #[derive(Clone)]
 struct Handler {
@@ -36,7 +38,7 @@ struct Handler {
 }
 
 impl TransparentProxyHandler for Handler {
-    // We need to peek into the ClientHello, so we have to intercept all HTTPS traffic
+    // Claim all web traffic; what to screen is decided from the ClientHello.
     fn transparent_proxy_config(&self) -> TransparentProxyConfig {
         let tcp_rule = |port| {
             TransparentProxyNetworkRule::any()
@@ -46,8 +48,7 @@ impl TransparentProxyHandler for Handler {
         TransparentProxyConfig::new().with_rules(vec![tcp_rule(80), tcp_rule(443)])
     }
 
-    /// The installer drives setup over this channel; an empty reply is indistinguishable
-    /// from no reply on the Swift side, so every answer carries something.
+    /// Setup requests from the installer. Never empty: Swift cannot tell that from no reply.
     async fn handle_app_message(&self, _exec: Executor, message: Bytes) -> Option<Bytes> {
         let message = String::from_utf8_lossy(&message).into_owned();
         Some(Bytes::from(match message.as_str() {
@@ -66,8 +67,7 @@ impl TransparentProxyHandler for Handler {
         meta: TransparentProxyFlowMeta,
     ) -> FlowAction<impl Service<BridgeIo<TcpFlow, NwTcpStream>, Output = (), Error = Infallible>>
     {
-        // A named flow reflects what the client resolved, so a non-registry name
-        // can be declined unpeeked — at the cost of a client naming its own host.
+        // Skip peeking when the client's own hostname is not a registry; it could misreport it.
         let hostname = meta.remote_hostname.as_deref();
         if hostname.is_some_and(|host| !self.hosts.contains(&host)) {
             return FlowAction::Passthrough;
@@ -84,8 +84,7 @@ impl TransparentProxyHandlerFactory for Factory {
     type Handler = Handler;
     type Error = BoxError;
 
-    /// The engine enters its runtime only to poll, so the work belongs in the
-    /// future: building it happens outside, where a spawn would panic.
+    /// Build inside the future: spawning outside the engine's runtime panics.
     async fn create_transparent_proxy_handler(
         &self,
         ctx: TransparentProxyServiceContext,

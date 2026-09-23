@@ -30,7 +30,6 @@ pub struct DenylistSource {
     pub token: Option<String>,
     /// Polled for a new commit, which re-fetches every list in use.
     pub revision: String,
-    /// How often that check runs.
     pub poll_secs: u64,
 }
 

@@ -27,7 +27,7 @@ pub enum Decision {
 
 pub async fn decide(request_target: &str, firewall: &Firewall) -> Decision {
     let path = request_target.split_once('?').map_or(request_target, |(path, _)| path);
-    let Some((registry, rest)) = firewall.match_path(path) else {
+    let Some((registry, rest)) = firewall.match_on(path, |r| r.prefix) else {
         return Decision::Unroutable;
     };
 
@@ -61,7 +61,7 @@ pub async fn decide(request_target: &str, firewall: &Firewall) -> Decision {
 }
 
 pub async fn screen(url: &str, firewall: &Firewall) -> Option<String> {
-    let (registry, rest) = firewall.match_upstream(url)?;
+    let (registry, rest) = firewall.match_on(url, |r| r.upstream)?;
     let Some(pkg) = firewall.resolve(registry, rest).pkg else {
         info!(eco = registry.eco, %url, "no pattern names a package here");
         return None;

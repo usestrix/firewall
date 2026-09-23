@@ -20,13 +20,13 @@ use std::sync::Arc;
 
 pub type MitmService = PeekTlsClientHelloService<SniRouter<InterceptService>, RelayService>;
 
-/// Screens decoded HTTP traffic
+/// Screens HTTP, whether decrypted or plaintext.
 type RelayService = Arc<HttpMitmRelay<FirewallLayer>>;
 
 type InterceptService =
     TlsMitmRelayService<CachedBoringMitmCertIssuer<ConstrainedCertIssuer>, RelayService>;
 
-/// Branch on ClientHello (registries are screened, everything else is relayed)
+/// Registry TLS is decrypted and screened, other TLS copied through, plaintext screened as is.
 pub fn mitm_service(
     firewall: Arc<Firewall>,
     ca: &CertificateAuthority,
@@ -36,7 +36,6 @@ pub fn mitm_service(
     let hosts = firewall.hosts();
     let issuer = ConstrainedCertIssuer::new(ca.crt.clone(), signer, hosts.clone());
 
-    // Plaintext traffic relay
     let relay = Arc::new(HttpMitmRelay::new(exec).with_http_middleware(FirewallLayer { firewall }));
 
     // Without this the relay accepts any upstream certificate.
