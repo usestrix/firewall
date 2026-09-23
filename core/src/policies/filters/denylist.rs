@@ -131,12 +131,17 @@ impl AffectedVersions {
     }
 }
 
-/// A request naming a version answers only for the advisories covering it; one naming
-/// none answers for all of them, since any could be what it leads to.
+/// An index request names no version, so it answers only for advisories covering every
+/// version; anything narrower would flag the clean versions too.
+/// This is important for allowing requests to indexes through. (downloads themselves
+/// always carry versions)
 pub fn mal_ids<'a>(advisories: &'a [Advisory], version: Option<&str>) -> Vec<&'a str> {
     advisories
         .iter()
-        .filter(|advisory| version.is_none_or(|v| advisory.affected.covers(v)))
+        .filter(|advisory| match version {
+            Some(v) => advisory.affected.covers(v),
+            None => matches!(advisory.affected, AffectedVersions::All),
+        })
         .map(|advisory| advisory.id.as_str())
         .collect()
 }

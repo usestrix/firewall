@@ -17,8 +17,10 @@ impl Filter for Osv {
 
     fn check<'a>(&'a self, registry: &'static Registry, pkg: &'a Package) -> VerdictFuture<'a> {
         Box::pin(async move {
+            // An index request names no version; only downloads are screened.
+            let Some(version) = pkg.version.as_deref() else { return Verdict::Allow };
             let client = EasyHttpWebClient::default();
-            let query = query(registry.osv_name, pkg);
+            let query = query(registry.osv_name, &pkg.name, version);
             let response = match client.post(URL).body(query).send().await {
                 Ok(response) => response,
                 Err(e) => return Verdict::Unknown(e.to_string()),
@@ -45,13 +47,8 @@ impl Filter for Osv {
     }
 }
 
-fn query(eco: &str, pkg: &Package) -> String {
-    let package = json!({ "name": pkg.name, "ecosystem": eco });
-    match &pkg.version {
-        Some(version) => json!({ "package": package, "version": version }),
-        None => json!({ "package": package }),
-    }
-    .to_string()
+fn query(eco: &str, name: &str, version: &str) -> String {
+    json!({ "package": { "name": name, "ecosystem": eco }, "version": version }).to_string()
 }
 
 /// A MAL- id marks a malware advisory; every other OSV id is an ordinary vulnerability.

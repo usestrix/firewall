@@ -41,10 +41,11 @@ fn an_open_range_covers_its_floor_and_up() {
 }
 
 #[test]
-fn a_request_naming_no_version_answers_for_every_row() {
+fn a_request_naming_no_version_answers_only_for_the_rows_covering_every_version() {
     let list = parse(LIST).unwrap();
-    assert_eq!(mal_ids(&list["arrayref"], None), ["MAL-2026-14336"]);
-    assert_eq!(mal_ids(&list["analysis-chart"], None), ["MAL-2026-10890", "MAL-2026-10890"]);
+    assert_eq!(mal_ids(&list["@0xengine/xmlrpc"], None), ["MAL-2024-11182"]);
+    assert!(mal_ids(&list["arrayref"], None).is_empty());
+    assert!(mal_ids(&list["@dydxprotocol/solo"], None).is_empty());
 }
 
 #[test]
