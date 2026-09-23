@@ -16,6 +16,8 @@ pub struct FirewallConfig {
     /// Allow a package when a filter could not check it.
     pub fail_open: bool,
     pub denylist: DenylistSource,
+    /// Anonymous screening events and errors, sent in batches; see `telemetry.rs`.
+    pub telemetry: bool,
     /// Not describable in the file yet, so this is always the built-in table.
     #[serde(skip)]
     pub registries: Vec<&'static Registry>,
@@ -45,6 +47,7 @@ impl Default for FirewallConfig {
             port: DEFAULT_PORT,
             fail_open: true,
             denylist: DenylistSource::default(),
+            telemetry: true,
             registries: BUILT_IN.to_vec(),
         }
     }

@@ -1,5 +1,5 @@
 use crate::http::{blocked, https_url, text};
-use crate::policies;
+use crate::{policies, telemetry};
 use crate::{Firewall, FirewallConfig};
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
@@ -59,7 +59,9 @@ async fn handle(req: Request, firewall: &Firewall) -> Result<Response, Infallibl
         return Ok(text(400, "firewall: expected an absolute URL\n"));
     };
 
-    if let Some(reason) = policies::screen(&url, firewall).await {
+    let reason = policies::screen(&url, firewall).await;
+    telemetry::screened(firewall, &url, reason.is_some());
+    if let Some(reason) = reason {
         warn!(method = %req.method(), %url, %reason, "blocked");
         return Ok(blocked(&reason));
     }
@@ -76,6 +78,7 @@ async fn handle(req: Request, firewall: &Firewall) -> Result<Response, Infallibl
     let response = match client.serve(Request::from_parts(parts, body)).await {
         Ok(response) => response,
         Err(e) => {
+            telemetry::error("upstream");
             warn!(%url, error = %e, "upstream request failed");
             return Ok(text(502, &format!("firewall: upstream error: {e}\n")));
         }

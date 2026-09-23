@@ -1,6 +1,6 @@
 use bpaf::{any, choice, pure, OptionParser, Parser};
 use firewall::aliasing::{self, Invocation, Manager, MANAGERS};
-use firewall::{config, proxy, FirewallConfig};
+use firewall::{config, proxy, telemetry, FirewallConfig};
 use std::io::ErrorKind;
 use tracing::{error, info};
 
@@ -51,7 +51,7 @@ fn main() {
 fn load() -> FirewallConfig {
     match FirewallConfig::load() {
         Ok(config) => config,
-        Err(e) => fail(&format!("could not read the config: {e}")),
+        Err(e) => fail("config", &format!("could not read the config: {e}")),
     }
 }
 
@@ -63,34 +63,38 @@ fn serve() -> ! {
         Ok(()) => std::process::exit(0),
         Err(e) if e.kind() == ErrorKind::AddrInUse => {
             let where_ = config::path().map_or("the config".into(), |p| p.display().to_string());
-            fail(&format!("port {port} is in use, set another in {where_}"))
+            fail("port", &format!("port {port} is in use, set another in {where_}"))
         }
         Err(e) if e.kind() == ErrorKind::PermissionDenied => {
-            fail(&format!("not allowed to listen on port {port}"))
+            fail("port", &format!("not allowed to listen on port {port}"))
         }
-        Err(e) => fail(&format!("could not serve on port {port}: {e}")),
+        Err(e) => fail("serve", &format!("could not serve on port {port}: {e}")),
     }
 }
 
 fn run(invocation: Invocation) -> ! {
     let port = match aliasing::spawn(0, load()) {
         Ok(port) => port,
-        Err(e) => fail(&format!("could not start the proxy: {e}")),
+        Err(e) => fail("spawn", &format!("could not start the proxy: {e}")),
     };
     info!(proxy = %firewall::local_url(port, ""), "forward proxy listening");
 
-    match aliasing::run(port, &invocation, None) {
+    let result = aliasing::run(port, &invocation, None);
+    telemetry::flush();
+    match result {
         Ok(code) => std::process::exit(code),
         Err(e) if e.kind() == ErrorKind::NotFound => {
             error!("{} is not installed", invocation.manager.command);
             std::process::exit(127)
         }
-        Err(e) => fail(&format!("could not run {}: {e}", invocation.manager.command)),
+        Err(e) => fail("run", &format!("could not run {}: {e}", invocation.manager.command)),
     }
 }
 
-fn fail(message: &str) -> ! {
+fn fail(kind: &'static str, message: &str) -> ! {
     error!("{message}");
+    telemetry::error(kind);
+    telemetry::flush();
     std::process::exit(1)
 }
 

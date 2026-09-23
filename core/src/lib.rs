@@ -6,6 +6,7 @@ pub mod mitm;
 pub mod os;
 pub mod policies;
 pub mod proxy;
+pub mod telemetry;
 
 pub use self::firewall::Firewall;
 pub use config::{FirewallConfig, DEFAULT_PORT};

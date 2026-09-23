@@ -3,7 +3,7 @@ mod install;
 mod uninstall;
 
 use crate::config::FirewallConfig;
-use crate::mitm;
+use crate::{mitm, telemetry};
 use crate::Firewall;
 use rama::bytes::Bytes;
 use rama::error::BoxError;
@@ -89,15 +89,23 @@ impl TransparentProxyHandlerFactory for Factory {
         &self,
         ctx: TransparentProxyServiceContext,
     ) -> Result<Self::Handler, Self::Error> {
-        handler(ctx.executor)
+        let handler = handler(ctx.executor);
+        if handler.is_err() {
+            telemetry::send().await;
+        }
+        handler
     }
 }
 
 fn handler(exec: Executor) -> Result<Handler, BoxError> {
-    let firewall = Arc::new(Firewall::new(FirewallConfig::load()?));
+    telemetry::heartbeat();
+    let config = FirewallConfig::load().inspect_err(|_| telemetry::error("config"))?;
+    let firewall = Arc::new(Firewall::new(config));
     let hosts = firewall.hosts();
-    let signer: mitm::CaSigner = Arc::new(enclave::EnclaveKey::load_or_create()?);
-    let ca = Arc::new(install::certificate_authority(&hosts, &*signer)?);
+    let key = enclave::EnclaveKey::load_or_create().inspect_err(|_| telemetry::error("enclave"))?;
+    let signer: mitm::CaSigner = Arc::new(key);
+    let ca = install::certificate_authority(&hosts, &*signer);
+    let ca = Arc::new(ca.inspect_err(|_| telemetry::error("ca"))?);
     let service = mitm::mitm_service(firewall, &ca, signer, exec);
     Ok(Handler { ca, hosts, service })
 }
