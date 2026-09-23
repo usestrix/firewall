@@ -5,6 +5,7 @@ pub use registries::Package;
 
 use crate::Firewall;
 use filters::{consult, Verdict};
+use tracing::info;
 
 pub struct Target {
     pub eco: &'static str,
@@ -61,7 +62,11 @@ pub async fn decide(request_target: &str, firewall: &Firewall) -> Decision {
 
 pub async fn screen(url: &str, firewall: &Firewall) -> Option<String> {
     let (registry, rest) = firewall.match_upstream(url)?;
-    let pkg = firewall.resolve(registry, rest).pkg?;
+    let Some(pkg) = firewall.resolve(registry, rest).pkg else {
+        info!(eco = registry.eco, %url, "no pattern names a package here");
+        return None;
+    };
+    info!(eco = registry.eco, pkg = %pkg.label(), %url, "screening");
     match consult(firewall, registry, &pkg).await {
         Some((_, Verdict::Deny(reason))) => {
             Some(format!("{} {} {reason}", registry.eco, pkg.label()))

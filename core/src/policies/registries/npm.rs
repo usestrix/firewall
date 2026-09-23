@@ -6,14 +6,15 @@ pub static NPM: Registry = Registry {
     osv_name: "npm",
     upstream: "https://registry.npmjs.org/",
     index: true,
+    normalize: None,
     patterns: &[
-        // Tarballs are <name>/-/<basename>-<version>.tgz, and the version is the last hyphen group starting with a digit.
+        // Both halves of <basename>-<version>.tgz hold hyphens; only the version is semver.
         Pattern {
-            re: r"^(?<name>@[^/]+/[^/]+|[^-/][^/]*)/-/.*-(?<version>\d[^/]*)\.tgz$",
+            re: r"^(?<name>@[^/]+/[^/]+|[^/]+)/-/.*-(?<version>\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\.tgz$",
             rewrite: None,
         },
         Pattern {
-            re: r"^(?<name>@[^/]+(?:/|%2[fF])[^/]+|[^-/][^/]*)/?$",
+            re: r"^(?<name>@[^/]+(?:/|%2[fF])[^/]+|[^/]+)/?$",
             rewrite: Some(("https://registry.npmjs.org/", "/npm/")),
         },
     ],

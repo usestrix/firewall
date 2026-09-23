@@ -6,6 +6,7 @@ pub static CARGO_INDEX: Registry = Registry {
     osv_name: "crates.io",
     upstream: "https://index.crates.io/",
     index: true,
+    normalize: None,
     patterns: &[
         // Carries no package; it exists to steer downloads at CARGO_DL, which does see the version.
         Pattern {
@@ -23,6 +24,7 @@ pub static CARGO_DL: Registry = Registry {
     osv_name: "crates.io",
     upstream: "https://static.crates.io/crates/",
     index: false,
+    normalize: None,
     patterns: &[Pattern { re: r"^(?<name>[^/]+)/(?<version>[^/]+)", rewrite: None }],
 };
 
@@ -33,5 +35,6 @@ pub static CRATES_API: Registry = Registry {
     osv_name: "crates.io",
     upstream: "https://crates.io/",
     index: false,
+    normalize: None,
     patterns: &[],
 };

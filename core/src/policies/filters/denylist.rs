@@ -6,6 +6,7 @@ use rama::http::client::EasyHttpWebClient;
 use rama::http::header::{AUTHORIZATION, ETAG, IF_NONE_MATCH, USER_AGENT};
 use rama::http::service::client::HttpClientExt;
 use rama::http::{BodyExtractExt, StatusCode};
+use semver::Version;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -16,8 +17,25 @@ use tracing::{info, warn};
 /// The GitHub API turns away requests without a user agent.
 const AGENT: &str = "strix-firewall";
 
-/// Flagged package names and the MAL- ids behind them, or why the list is missing.
-pub type FetchedDenylist = Result<HashMap<String, String>, String>;
+/// Which versions of a package one advisory covers.
+#[derive(Debug, PartialEq)]
+pub enum AffectedVersions {
+    All,
+    AtLeast(Version),
+    Only(String),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Advisory {
+    pub id: String,
+    pub affected: AffectedVersions,
+}
+
+/// Flagged package names and the advisories filed against them.
+pub type Advisories = HashMap<String, Vec<Advisory>>;
+
+/// A parsed list, or why it is missing.
+pub type FetchedDenylist = Result<Advisories, String>;
 
 /// One list per ecosystem, downloaded when a package from it is first screened.
 type Lists = HashMap<&'static str, OnceCell<RwLock<Arc<FetchedDenylist>>>>;
@@ -63,12 +81,64 @@ impl Filter for Denylist {
             match &*list {
                 Err(e) => Verdict::Unknown(e.clone()),
                 Ok(list) => match list.get(&pkg.name) {
-                    Some(ids) => Verdict::Deny(format!("is on the malicious package list ({ids})")),
                     None => Verdict::Allow,
+                    Some(advisories) => {
+                        let hits = mal_ids(advisories, pkg.version.as_deref());
+                        match hits.is_empty() {
+                            true => Verdict::Allow,
+                            false => Verdict::Deny(format!(
+                                "is on the malicious package list ({})",
+                                hits.join(",")
+                            )),
+                        }
+                    }
                 },
             }
         })
     }
+}
+
+impl AffectedVersions {
+    /// `*` is every version, `>=X` a range opened at X, anything else one version.
+    fn parse(version: &str) -> AffectedVersions {
+        match version.strip_prefix(">=") {
+            Some(floor) => match Version::parse(floor) {
+                Ok(floor) => Self::AtLeast(floor),
+                // A floor that will not parse leaves nothing to place a version below.
+                Err(e) => {
+                    warn!(floor, "denylist floor is not semver, widening to every version: {e}");
+                    Self::All
+                }
+            },
+            None if version == "*" => Self::All,
+            None => Self::Only(version.to_string()),
+        }
+    }
+
+    fn covers(&self, version: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::AtLeast(floor) => match Version::parse(version) {
+                Ok(v) => &v >= floor,
+                // A version that will not parse cannot be placed below the floor either.
+                Err(e) => {
+                    warn!(version, %floor, "requested version is not semver, covering it: {e}");
+                    true
+                }
+            },
+            Self::Only(exact) => exact == version,
+        }
+    }
+}
+
+/// A request naming a version answers only for the advisories covering it; one naming
+/// none answers for all of them, since any could be what it leads to.
+pub fn mal_ids<'a>(advisories: &'a [Advisory], version: Option<&str>) -> Vec<&'a str> {
+    advisories
+        .iter()
+        .filter(|advisory| version.is_none_or(|v| advisory.affected.covers(v)))
+        .map(|advisory| advisory.id.as_str())
+        .collect()
 }
 
 /// Re-fetches the lists in use whenever the source gets a new commit. A failed
@@ -141,17 +211,31 @@ async fn fetch(source: &DenylistSource, token: Option<&str>, eco: &str) -> Fetch
         return Err(format!("{url} replied {}", response.status()));
     }
     let text = response.try_into_string().await.map_err(|e| e.to_string())?;
-    Ok(parse(&text))
+    parse(&text)
 }
 
-/// Every line is "<name>:<MAL- id>[,...]". Maven names contain colons, so the ids
-/// are what follows the last one.
-pub fn parse(text: &str) -> HashMap<String, String> {
-    let mut list = HashMap::new();
+/// Rows are "<name>\t<version>\t<MAL- id>"; tab is the one separator no package name holds.
+pub fn parse(text: &str) -> FetchedDenylist {
+    let mut list = Advisories::new();
+    let mut skipped = 0;
     for line in text.lines() {
-        if let Some((name, ids)) = line.rsplit_once(':') {
-            list.insert(name.to_string(), ids.to_string());
-        }
+        let mut row = line.split('\t');
+        let (Some(name), Some(version), Some(id)) = (row.next(), row.next(), row.next()) else {
+            skipped += 1;
+            warn!(line = head(line), "denylist row is not <name>, <version>, <id> tab-separated");
+            continue;
+        };
+        let advisory = Advisory { id: id.to_string(), affected: AffectedVersions::parse(version) };
+        list.entry(name.to_string()).or_default().push(advisory);
     }
-    list
+    // Nothing parsing out is a fetch gone wrong, not an ecosystem with no malicious
+    // packages, and the last good list screens better than an empty one.
+    match list.is_empty() {
+        true => Err(format!("none of {skipped} rows parsed")),
+        false => Ok(list),
+    }
+}
+
+fn head(line: &str) -> &str {
+    line.char_indices().nth(80).map_or(line, |(i, _)| &line[..i])
 }

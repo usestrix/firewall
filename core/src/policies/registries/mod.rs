@@ -45,6 +45,8 @@ pub struct Registry {
     pub upstream: &'static str,
     /// Responses are link lists we may rewrite; package bytes must be passed through untouched.
     pub index: bool,
+    /// PyPI escapes a name into a filename and Go escapes its capitals; advisories do neither.
+    pub normalize: Option<fn(&str) -> String>,
     pub patterns: &'static [Pattern],
 }
 
@@ -75,9 +77,15 @@ pub fn resolve(registry: &'static Registry, rest: &str, patterns: &[Regex]) -> R
         let Some(caps) = re.captures(rest) else {
             continue;
         };
-        let pkg = caps.name("name").map(|n| Package {
-            name: url_decode(n.as_str()),
-            version: caps.name("version").map(|v| url_decode(v.as_str())),
+        let pkg = caps.name("name").map(|n| {
+            let name = url_decode(n.as_str());
+            Package {
+                name: match registry.normalize {
+                    Some(normalize) => normalize(&name),
+                    None => name,
+                },
+                version: caps.name("version").map(|v| url_decode(v.as_str())),
+            }
         });
         return Resolved { pkg, rewrite: pattern.rewrite };
     }
