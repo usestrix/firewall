@@ -1,5 +1,5 @@
 [package]
-name = "firewall"
+name = "strix-firewall"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
@@ -8,9 +8,14 @@ license = "Apache-2.0"
 autotests = false
 
 [lib]
+name = "firewall"
 # The macOS extension links a staticlib, built on demand:
 # cargo rustc --lib --crate-type staticlib
 crate-type = ["lib"]
+
+[[bin]]
+name = "firewall"
+path = "src/main.rs"
 
 [[bin]]
 name = "proxy-test"
