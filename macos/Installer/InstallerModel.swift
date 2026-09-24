@@ -292,7 +292,14 @@ final class InstallerModel: NSObject, ObservableObject {
             trustStep = .running("Requesting authorization")
             try TrustStore.trust(certificate)
         }
-        return TrustStore.fingerprint(certificate)
+        let fingerprint = TrustStore.fingerprint(certificate)
+        // A re-minted CA would otherwise leave the previous root trusted alongside it.
+        for authority in TrustStore.trustedAuthorities(commonName: FirewallIDs.caCommonName)
+        where TrustStore.fingerprint(authority) != fingerprint {
+            try TrustStore.untrust(authority)
+            log("Trust removed for stale \(TrustStore.fingerprint(authority))")
+        }
+        return fingerprint
     }
 
     /// NE can report the connection up a moment before the provider answers messages.
