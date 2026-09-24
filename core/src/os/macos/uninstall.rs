@@ -7,7 +7,7 @@ use std::io::ErrorKind;
 use tracing::info;
 
 /// Installed by the pkg.
-const ENV_AGENT: &str = "/Library/LaunchAgents/com.strix.firewall.env.plist";
+const ENV_AGENT: &str = "/Library/LaunchAgents/ai.strix.firewall.env.plist";
 
 /// Removes what only root can: the CA, its enclave key and exported copy, and the env
 /// agent. Trust settings need an authorization dialog, so the installer drops those itself.

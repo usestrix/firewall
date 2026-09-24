@@ -10,8 +10,8 @@ cd "$(dirname "$0")"
 [ -f .env ] && . ./.env
 : "${TEAM:?set TEAM in macos/.env}"
 export TEAM
-APP_ID=com.strix.firewall
-EXT_ID=com.strix.firewall.extension
+APP_ID=ai.strix.firewall
+EXT_ID=ai.strix.firewall.extension
 IDENTITY=${IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' "/Apple Development/ {print \$2; exit}")}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
@@ -54,7 +54,7 @@ echo "installed /Applications/Firewall.app"
 PKG_ROOT=build/pkg-root
 rm -rf "$PKG_ROOT" && mkdir -p "$PKG_ROOT/Applications" "$PKG_ROOT/Library/LaunchAgents"
 cp -R "$APP" "$PKG_ROOT/Applications/Firewall.app"
-cp LaunchAgents/com.strix.firewall.env.plist "$PKG_ROOT/Library/LaunchAgents/"
+cp LaunchAgents/ai.strix.firewall.env.plist "$PKG_ROOT/Library/LaunchAgents/"
 pkgbuild --analyze --root "$PKG_ROOT" build/components.plist >/dev/null
 plutil -replace 0.BundleIsRelocatable -bool NO build/components.plist
 pkgbuild --root "$PKG_ROOT" --component-plist build/components.plist --scripts pkg \

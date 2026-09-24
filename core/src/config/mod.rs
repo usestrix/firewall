@@ -87,6 +87,6 @@ impl FirewallConfig {
 }
 
 pub fn path() -> Option<PathBuf> {
-    let dirs = ProjectDirs::from("com", "usestrix", "firewall")?;
+    let dirs = ProjectDirs::from("ai", "strix", "firewall")?;
     Some(dirs.config_dir().join("config.json"))
 }
