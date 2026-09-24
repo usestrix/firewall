@@ -28,6 +28,7 @@ pub enum AffectedVersions {
 pub struct Advisory {
     pub id: String,
     pub affected: AffectedVersions,
+    pub link: Option<String>,
 }
 
 pub type Advisories = HashMap<String, Vec<Advisory>>;
@@ -80,12 +81,12 @@ impl Filter for Denylist {
                 Ok(list) => match list.get(&pkg.name) {
                     None => Verdict::Allow,
                     Some(advisories) => {
-                        let hits = mal_ids(advisories, pkg.version.as_deref());
+                        let hits = covering(advisories, pkg.version.as_deref());
                         match hits.is_empty() {
                             true => Verdict::Allow,
                             false => Verdict::Deny(format!(
-                                "is on the malicious package list ({})",
-                                hits.join(",")
+                                "contains malicious code: {}",
+                                describe(&hits)
                             )),
                         }
                     }
@@ -101,7 +102,6 @@ impl AffectedVersions {
         match version.strip_prefix(">=") {
             Some(floor) => match Version::parse(floor) {
                 Ok(floor) => Self::AtLeast(floor),
-                // A floor that will not parse leaves nothing to place a version below.
                 Err(e) => {
                     warn!(floor, "denylist floor is not semver, widening to every version: {e}");
                     Self::All
@@ -117,7 +117,6 @@ impl AffectedVersions {
             Self::All => true,
             Self::AtLeast(floor) => match Version::parse(version) {
                 Ok(v) => &v >= floor,
-                // A version that will not parse cannot be placed below the floor either.
                 Err(e) => {
                     warn!(version, %floor, "requested version is not semver, covering it: {e}");
                     true
@@ -128,21 +127,29 @@ impl AffectedVersions {
     }
 }
 
-/// An index request names no version, so it answers only for advisories covering every
-/// version; a narrower one would flag the package's clean versions too.
-pub fn mal_ids<'a>(advisories: &'a [Advisory], version: Option<&str>) -> Vec<&'a str> {
+/// With no version, only advisories covering every version apply.
+pub fn covering<'a>(advisories: &'a [Advisory], version: Option<&str>) -> Vec<&'a Advisory> {
     advisories
         .iter()
         .filter(|advisory| match version {
             Some(v) => advisory.affected.covers(v),
             None => matches!(advisory.affected, AffectedVersions::All),
         })
-        .map(|advisory| advisory.id.as_str())
         .collect()
 }
 
-/// Re-fetches the lists in use whenever the source gets a new commit. A failed
-/// fetch leaves the last good list in place.
+pub fn describe(advisories: &[&Advisory]) -> String {
+    let mut parts = Vec::new();
+    for advisory in advisories {
+        match &advisory.link {
+            Some(link) => parts.push(format!("{} {link}", advisory.id)),
+            None => parts.push(advisory.id.clone()),
+        }
+    }
+    parts.join(", ")
+}
+
+/// A failed fetch leaves the last good list in place.
 async fn watch(source: DenylistSource, token: Option<String>, lists: Arc<Lists>) {
     let period = Duration::from_secs(source.poll_secs);
     let mut seen = revision(&source, token.as_deref(), None).await;
@@ -162,8 +169,7 @@ async fn watch(source: DenylistSource, token: Option<String>, lists: Arc<Lists>)
     }
 }
 
-/// The new commit, or `None` when nothing moved or the check failed. GitHub answers
-/// an unchanged `If-None-Match` with a 304, which costs no rate limit.
+/// GitHub's 304 for an unchanged `If-None-Match` costs no rate limit.
 async fn revision(
     source: &DenylistSource,
     token: Option<&str>,
@@ -214,7 +220,7 @@ async fn fetch(source: &DenylistSource, token: Option<&str>, eco: &str) -> Fetch
     parse(&text)
 }
 
-/// Rows are "<name>\t<version>\t<MAL- id>"; tab is the one separator no package name holds.
+/// Rows are "<name>\t<version>\t<MAL- id>[\t<link>]"; tab is the one separator no package name holds.
 pub fn parse(text: &str) -> FetchedDenylist {
     let mut list = Advisories::new();
     let mut skipped = 0;
@@ -225,11 +231,12 @@ pub fn parse(text: &str) -> FetchedDenylist {
             warn!(line = head(line), "denylist row is not <name>, <version>, <id> tab-separated");
             continue;
         };
-        let advisory = Advisory { id: id.to_string(), affected: AffectedVersions::parse(version) };
+        let link = row.next().filter(|link| !link.is_empty()).map(str::to_string);
+        let affected = AffectedVersions::parse(version);
+        let advisory = Advisory { id: id.to_string(), affected, link };
         list.entry(name.to_string()).or_default().push(advisory);
     }
-    // Nothing parsing out is a fetch gone wrong, not an ecosystem with no malicious
-    // packages, and the last good list screens better than an empty one.
+    // An empty parse means a bad fetch; keep the last good list instead.
     match list.is_empty() {
         true => Err(format!("none of {skipped} rows parsed")),
         false => Ok(list),

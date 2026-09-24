@@ -12,7 +12,6 @@ fn recipes_expand_into_the_environment() {
     assert!(arguments("http://127.0.0.1:9000", &GEM, &["sources".to_string()]).is_empty());
 }
 
-/// A manager pointed at a host with no registry would be aliased but never screened.
 #[tokio::test]
 async fn every_overridden_registry_is_known() {
     let hosts = Firewall::default().hosts();

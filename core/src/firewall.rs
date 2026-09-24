@@ -31,7 +31,6 @@ impl Firewall {
         Firewall { config, patterns, filters }
     }
 
-    /// The registry whose `key` field starts `url`, and the rest of `url`.
     pub fn match_on<'a>(
         &self,
         url: &'a str,
@@ -40,7 +39,6 @@ impl Firewall {
         self.config.registries.iter().find_map(|r| url.strip_prefix(key(r)).map(|rest| (*r, rest)))
     }
 
-    /// Every host we screen: what the proxy rewrites and what the extension claims.
     pub fn hosts(&self) -> Vec<&'static str> {
         let mut hosts: Vec<&'static str> = Vec::new();
         for registry in &self.config.registries {

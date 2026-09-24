@@ -3,8 +3,10 @@ name = "strix-firewall"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
-# proxy-test lives under tests/, which cargo would otherwise also claim as an
-# integration test; new tests/*.rs need an explicit [[test]] entry.
+description = "Screens package downloads for known malware before they reach your machine"
+repository = "https://github.com/usestrix/firewall"
+# The proxy-test example lives under tests/, which cargo would otherwise claim
+# as an integration test; new tests/*.rs need an explicit [[test]] entry.
 autotests = false
 
 [lib]
@@ -17,7 +19,7 @@ crate-type = ["lib"]
 name = "firewall"
 path = "src/main.rs"
 
-[[bin]]
+[[example]]
 name = "proxy-test"
 path = "tests/proxy-test/main.rs"
 

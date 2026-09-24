@@ -8,7 +8,7 @@ use std::pin::Pin;
 
 pub type VerdictFuture<'a> = Pin<Box<dyn Future<Output = Verdict> + Send + 'a>>;
 
-/// What one filter makes of a package. `Unknown` means it could not tell.
+/// `Unknown` means the filter could not check the package.
 pub enum Verdict {
     Allow,
     Deny(String),

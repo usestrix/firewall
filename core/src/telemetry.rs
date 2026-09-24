@@ -35,7 +35,6 @@ struct Telemetry {
     events: Mutex<Vec<Value>>,
 }
 
-/// One event per package download, named only when blocked
 pub fn screened(firewall: &Firewall, url: &str, blocked: bool) {
     if TELEMETRY.is_none() {
         return;

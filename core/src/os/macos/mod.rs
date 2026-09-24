@@ -117,7 +117,7 @@ fn init(_config: Option<&TransparentProxyInitConfig>) -> bool {
     std::panic::set_hook(Box::new(|panic| tracing::error!("{panic}")));
     if let Ok(oslog) = OsLogLayer::new(BUNDLE_ID, "extension") {
         let oslog = oslog.with_privacy(Privacy::Public);
-        let _ = tracing_subscriber::registry().with(crate::log_filter()).with(oslog).try_init();
+        let _ = tracing_subscriber::registry().with(crate::log_filter("info")).with(oslog).try_init();
     }
     true
 }

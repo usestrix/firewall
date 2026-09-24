@@ -18,8 +18,7 @@ const KEYCHAIN_ACCOUNT: &str = "enclave-key";
 /// The token object ID: the key's blob, sealed to this Mac's enclave. Not in any SDK header.
 const TOKEN_OBJECT_ID: &str = "toid";
 
-/// The CA's signing key, held in the Secure Enclave. The private half never exists
-/// outside the chip, so nothing on the machine can export it, root included.
+/// The private key never leaves the Secure Enclave, so not even root can export it.
 pub struct EnclaveKey {
     key: SecKey,
     /// The uncompressed point, which is what rcgen writes into a SubjectPublicKeyInfo.

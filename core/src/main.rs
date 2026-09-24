@@ -2,6 +2,8 @@ use bpaf::{any, choice, pure, OptionParser, Parser};
 use firewall::aliasing::{self, Invocation, Manager, MANAGERS};
 use firewall::{config, proxy, telemetry, FirewallConfig};
 use std::io::ErrorKind;
+use std::path::Path;
+use std::process::exit;
 use tracing::{error, info};
 
 enum SubCommand {
@@ -9,61 +11,68 @@ enum SubCommand {
     Run(Invocation),
 }
 
+fn main() {
+    match options().run() {
+        SubCommand::Serve => {
+            firewall::init_logging("info");
+            serve()
+        }
+        SubCommand::Run(invocation) => {
+            firewall::init_logging("warn");
+            run(invocation)
+        }
+    }
+}
+
 fn options() -> OptionParser<SubCommand> {
+    let program = program_name();
+    let footer = format!(
+        "Run a package manager through {program} to screen what it installs:\n   \
+         {program} npm install left-pad\n \n \
+         Alias it to screen every install without changing how you type:\n   \
+         alias npm='{program} npm'"
+    );
     let serve = pure(())
         .map(|()| SubCommand::Serve)
         .to_options()
-        .descr("Serve the registry proxy package managers point at")
+        .descr("Serve a local registry for package managers configured to use it")
         .command("serve");
 
-    let managers = MANAGERS.iter().map(|manager| package(manager).boxed());
-    choice(std::iter::once(serve.boxed()).chain(managers))
+    let mut commands: Vec<_> = MANAGERS
+        .iter()
+        .map(|manager| package(manager, &program).boxed())
+        .collect();
+    commands.push(serve.boxed());
+    choice(commands)
         .to_options()
         .descr("Screens package downloads before they reach your machine")
+        .footer(Box::leak(footer.into_boxed_str()) as &str)
         .fallback_to_usage()
 }
 
-fn package(manager: &'static Manager) -> impl Parser<SubCommand> {
+fn package(manager: &'static Manager, program: &str) -> impl Parser<SubCommand> {
     let name = manager.command;
-    rest()
+    let descr = format!("Run {name} with downloads screened: {program} {name} ARGS...");
+    any::<String, String, _>("ARGS", Some)
+        .many()
         .map(move |args| SubCommand::Run(Invocation::new(manager, args)))
         .to_options()
-        .descr(leak(format!("Run {name} through the proxy: firewall {name} ARGS...")))
+        .descr(Box::leak(descr.into_boxed_str()) as &str)
         .command(name)
-}
-
-fn rest() -> impl Parser<Vec<String>> {
-    any::<String, String, _>("ARGS", Some).many()
-}
-
-fn leak(text: String) -> &'static str {
-    Box::leak(text.into_boxed_str())
-}
-
-fn main() {
-    firewall::init_logging();
-    match options().run() {
-        SubCommand::Serve => serve(),
-        SubCommand::Run(invocation) => run(invocation),
-    }
-}
-
-fn load() -> FirewallConfig {
-    match FirewallConfig::load() {
-        Ok(config) => config,
-        Err(e) => fail("config", &format!("could not read the config: {e}")),
-    }
 }
 
 fn serve() -> ! {
     let config = load();
     let port = config.port;
-    banner(&config);
+    print_setup(&config);
     match proxy::serve(config) {
-        Ok(()) => std::process::exit(0),
+        Ok(()) => exit(0),
         Err(e) if e.kind() == ErrorKind::AddrInUse => {
-            let where_ = config::path().map_or("the config".into(), |p| p.display().to_string());
-            fail("port", &format!("port {port} is in use, set another in {where_}"))
+            let location = config::path().map_or("the config".into(), |p| p.display().to_string());
+            fail(
+                "port",
+                &format!("port {port} is in use, set another in {location}"),
+            )
         }
         Err(e) if e.kind() == ErrorKind::PermissionDenied => {
             fail("port", &format!("not allowed to listen on port {port}"))
@@ -73,21 +82,39 @@ fn serve() -> ! {
 }
 
 fn run(invocation: Invocation) -> ! {
+    let command = invocation.manager.command;
     let port = match aliasing::spawn(0, load()) {
         Ok(port) => port,
-        Err(e) => fail("spawn", &format!("could not start the proxy: {e}")),
+        Err(e) => fail("spawn", &format!("could not start the firewall: {e}")),
     };
-    info!(proxy = %firewall::local_url(port, ""), "forward proxy listening");
+    info!(url = %firewall::local_url(port, ""), "firewall listening");
 
     let result = aliasing::run(port, &invocation, None);
     telemetry::flush();
     match result {
-        Ok(code) => std::process::exit(code),
+        Ok(code) => exit(code),
         Err(e) if e.kind() == ErrorKind::NotFound => {
-            error!("{} is not installed", invocation.manager.command);
-            std::process::exit(127)
+            error!("{command} is not installed");
+            exit(127)
         }
-        Err(e) => fail("run", &format!("could not run {}: {e}", invocation.manager.command)),
+        Err(e) => fail("run", &format!("could not run {command}: {e}")),
+    }
+}
+
+fn print_setup(config: &FirewallConfig) {
+    let base = config.local_url("");
+    println!("Firewall listening on {base}\n");
+    println!("Point your package managers at it:");
+    println!("  npm    npm_config_registry={base}/npm/");
+    println!("  pip    PIP_INDEX_URL={base}/pypi/simple/");
+    println!("  cargo  [source.crates-io] replace-with = \"firewall\"");
+    println!("         [source.firewall] registry = \"sparse+{base}/cargo/index/\"\n");
+}
+
+fn load() -> FirewallConfig {
+    match FirewallConfig::load() {
+        Ok(config) => config,
+        Err(e) => fail("config", &format!("could not read the config: {e}")),
     }
 }
 
@@ -95,19 +122,13 @@ fn fail(kind: &'static str, message: &str) -> ! {
     error!("{message}");
     telemetry::error(kind);
     telemetry::flush();
-    std::process::exit(1)
+    exit(1)
 }
 
-fn banner(config: &FirewallConfig) {
-    let base = config.local_url("");
-    println!("firewall registry proxy on {base}");
-    println!(
-        "policy: {} when a package cannot be checked\n",
-        if config.fail_open { "allow" } else { "block" }
-    );
-    println!("point your package managers at it:");
-    println!("  npm    npm_config_registry={base}/npm/");
-    println!("  pip    PIP_INDEX_URL={base}/pypi/simple/");
-    println!("  cargo  [source.crates-io] replace-with=\"fw\"");
-    println!("         [source.fw] registry=\"sparse+{base}/cargo/index/\"\n");
+fn program_name() -> String {
+    let arg = std::env::args_os().next().unwrap_or_default();
+    match Path::new(&arg).file_name() {
+        Some(name) => name.to_string_lossy().into_owned(),
+        None => "firewall".into(),
+    }
 }

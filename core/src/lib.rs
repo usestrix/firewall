@@ -23,10 +23,10 @@ pub fn local_url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{port}{path}")
 }
 
-pub fn init_logging() {
-    fmt().with_env_filter(log_filter()).with_target(false).with_writer(std::io::stderr).init();
+pub fn init_logging(default_level: &str) {
+    fmt().with_env_filter(log_filter(default_level)).with_target(false).with_writer(std::io::stderr).init();
 }
 
-pub(crate) fn log_filter() -> EnvFilter {
-    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
+pub(crate) fn log_filter(default_level: &str) -> EnvFilter {
+    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level))
 }

@@ -32,7 +32,7 @@ enum InstallerError: Error, LocalizedError {
         switch self {
         case .extensionUnavailable: return "The extension is not running"
         case let .extensionRefused(reply): return "The extension replied \(reply)"
-        case let .screeningDidNotStart(status): return "Screening did not start, state \(status.rawValue)"
+        case let .screeningDidNotStart(status): return "Screening did not start (\(status.label))"
         }
     }
 }
@@ -76,7 +76,7 @@ final class InstallerModel: NSObject, ObservableObject {
         if let manager = try? await loadManager() {
             watched = manager
             if manager.isEnabled {
-                screeningStep = .done("Enabled, state \(manager.connection.status.rawValue)")
+                screeningStep = .done("Enabled (\(manager.connection.status.label))")
             }
             screening = manager.connection.status == .connected
         }
@@ -401,5 +401,19 @@ extension InstallerModel: OSSystemExtensionRequestDelegate {
 
     nonisolated func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
         Task { @MainActor in finishRequest(.failure(error)) }
+    }
+}
+
+private extension NEVPNStatus {
+    var label: String {
+        switch self {
+        case .invalid: return "not configured"
+        case .disconnected: return "disconnected"
+        case .connecting: return "connecting"
+        case .connected: return "connected"
+        case .reasserting: return "reconnecting"
+        case .disconnecting: return "disconnecting"
+        @unknown default: return "unknown"
+        }
     }
 }

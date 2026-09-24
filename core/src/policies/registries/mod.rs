@@ -70,7 +70,6 @@ pub struct Resolved {
 pub static BUILT_IN: &[&Registry] =
     &[&NPM, &PYPI_FILES, &PYPI, &CARGO_DL, &CARGO_INDEX, &CRATES_API, &GEM, &GO];
 
-/// `patterns` is `registry.patterns` compiled, in the same order.
 pub fn resolve(registry: &'static Registry, rest: &str, patterns: &[Regex]) -> Resolved {
     for (pattern, re) in registry.patterns.iter().zip(patterns) {
         let Some(caps) = re.captures(rest) else {

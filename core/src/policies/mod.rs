@@ -69,7 +69,7 @@ pub async fn screen(url: &str, firewall: &Firewall) -> Option<String> {
     info!(eco = registry.eco, pkg = %pkg.label(), %url, "screening");
     match consult(firewall, registry, &pkg).await {
         Some((_, Verdict::Deny(reason))) => {
-            Some(format!("{} {} {reason}", registry.eco, pkg.label()))
+            Some(format!("{} {reason}", pkg.label()))
         }
         _ => None,
     }

@@ -9,7 +9,6 @@ fn a_file_only_has_to_set_what_it_changes() {
     assert_eq!(config.denylist.token, FirewallConfig::default().denylist.token);
 }
 
-/// A typo that silently left the default in place could leave the policy wide open.
 #[test]
 fn a_misspelled_setting_is_an_error() {
     assert!(serde_json::from_str::<FirewallConfig>(r#"{"fail-open": false}"#).is_err());

@@ -1,6 +1,5 @@
 import AppKit
 
-/// Self-contained: removing this file and its one call in `InstallerModel.install()` removes the feature.
 enum CompetingExtensions {
     /// Warns about other active network extensions; false if the user cancels.
     static func confirmInstall() -> Bool {

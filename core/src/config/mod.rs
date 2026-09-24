@@ -7,8 +7,6 @@ use std::path::PathBuf;
 pub const DEFAULT_PORT: u16 = 8080;
 const TOKEN_ENV: &str = "FIREWALL_GITHUB_TOKEN";
 
-/// What the firewall reads from its config file. Every field has a default, so a
-/// missing file means the same as an empty one.
 #[derive(Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FirewallConfig {
@@ -16,7 +14,6 @@ pub struct FirewallConfig {
     /// Allow a package when a filter could not check it.
     pub fail_open: bool,
     pub denylist: DenylistSource,
-    /// Anonymous screening events and errors, sent in batches; see `telemetry.rs`.
     pub telemetry: bool,
     /// Not describable in the file yet, so this is always the built-in table.
     #[serde(skip)]
@@ -66,8 +63,7 @@ impl Default for DenylistSource {
 }
 
 impl FirewallConfig {
-    /// Defaults when there is no file; an unreadable or unparseable one is an error,
-    /// because falling back quietly could relax the policy the file was written to set.
+    /// A missing file means defaults; a bad one is an error, so the policy is never quietly relaxed.
     pub fn load() -> std::io::Result<Self> {
         let Some(path) = path() else {
             return Ok(Self::default());

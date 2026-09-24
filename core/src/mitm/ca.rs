@@ -6,8 +6,7 @@ use rcgen::{
 };
 use std::sync::Arc;
 
-/// Signs the CA and every leaf under it. Where the key lives is the platform's
-/// business: the Secure Enclave on macOS, memory anywhere else.
+/// Held in the Secure Enclave on macOS, in memory elsewhere.
 pub type CaSigner = Arc<dyn SigningKey + Send + Sync>;
 
 pub struct CertificateAuthority {
@@ -16,8 +15,7 @@ pub struct CertificateAuthority {
 }
 
 impl CertificateAuthority {
-    /// Mint a CA that can only sign for `hosts`. The name constraint is critical, so a
-    /// verifier that cannot enforce it rejects the chain instead of ignoring the limit.
+    /// The name constraint is critical, so a verifier that cannot enforce it rejects the chain.
     pub fn generate(hosts: &[&str], signer: &dyn SigningKey) -> Result<Self, BoxError> {
         let pem = params(hosts).self_signed(&signer)?.pem();
         Self::new(pem)

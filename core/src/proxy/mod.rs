@@ -43,8 +43,8 @@ async fn screen(target: String, firewall: &Firewall) -> Response {
             text(404, "No route.\n")
         }
         Decision::Block { eco, pkg, filter, reason } => {
-            let reason = format!("{eco} {} {reason}", pkg.label());
-            warn!(%filter, "blocked by firewall: {reason}");
+            let reason = format!("{} {reason}", pkg.label());
+            warn!(%eco, %filter, "blocked by firewall: {reason}");
             blocked(&reason)
         }
         Decision::Allow { target, check } => {

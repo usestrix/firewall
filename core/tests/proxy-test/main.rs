@@ -5,7 +5,7 @@ use firewall::FirewallConfig;
 use probe::Outcome;
 
 fn main() -> std::io::Result<()> {
-    firewall::init_logging();
+    firewall::init_logging("info");
     let port = aliasing::spawn(0, FirewallConfig::load()?)?;
     println!("firewall proxy on {}\n", firewall::local_url(port, ""));
 

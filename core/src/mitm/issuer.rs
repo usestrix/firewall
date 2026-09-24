@@ -7,9 +7,7 @@ use rama::utils::collections::non_empty_vec;
 use rcgen::{CertificateParams, DistinguishedName, DnType, Issuer, KeyPair};
 use std::sync::Arc;
 
-/// Issues leaves naming only the screened hosts the origin covers. Mirroring the
-/// origin's own names instead asserts names outside the CA's permitted subtrees,
-/// which every verifier rejects.
+/// Leaves name only screened hosts; any other name falls outside the CA's constraint.
 #[derive(Clone)]
 pub struct ConstrainedCertIssuer {
     ca_crt: X509,
@@ -45,8 +43,7 @@ impl BoringMitmCertIssuer for ConstrainedCertIssuer {
         let mut leaf = CertificateParams::new(names)?;
         leaf.distinguished_name = subject;
 
-        // Only the CA's key is held by the platform; each leaf gets its own, because
-        // the TLS server has to hold the leaf key in memory to use it.
+        // The TLS server needs the leaf key in memory, so it can't be the platform key.
         let leaf_key = KeyPair::generate()?;
         let issuer = Issuer::from_params(&self.ca_params, &*self.signer);
         let crt = X509::from_der(leaf.signed_by(&leaf_key, &issuer)?.der())?;

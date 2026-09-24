@@ -16,8 +16,7 @@ use std::convert::Infallible;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
-/// Speaks plaintext to clients and HTTPS upstream, so the full URL is visible
-/// without a certificate.
+/// Plaintext to clients and HTTPS upstream, so URLs are visible without a certificate.
 pub fn spawn(port: u16, config: FirewallConfig) -> std::io::Result<u16> {
     let bound = std::net::TcpListener::bind(("127.0.0.1", port))?;
     let local = bound.local_addr()?.port();
