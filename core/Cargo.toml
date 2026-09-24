@@ -59,6 +59,7 @@ time = { version = "0.3.47", features = ["formatting"] }
 tokio = { version = "1.53.1", features = ["io-util", "rt", "sync", "time"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+which = "8"
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
 core-foundation = "0.10.1"

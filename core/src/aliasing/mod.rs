@@ -4,7 +4,8 @@ pub mod managers;
 pub use forward::spawn;
 pub use managers::*;
 
-use std::path::Path;
+use std::io::{Error, ErrorKind};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub struct Invocation {
@@ -26,7 +27,7 @@ pub fn run(port: u16, invocation: &Invocation, dir: Option<&Path>) -> std::io::R
     let at = args.iter().position(|arg| arg == "--").unwrap_or(args.len());
     args.splice(at..at, ours);
 
-    let mut command = Command::new(invocation.manager.command);
+    let mut command = Command::new(resolve(invocation.manager.command)?);
     command.args(args);
     if let Some(dir) = dir {
         command.current_dir(dir);
@@ -35,4 +36,9 @@ pub fn run(port: u16, invocation: &Invocation, dir: Option<&Path>) -> std::io::R
         command.env(key, value);
     }
     Ok(command.status()?.code().unwrap_or(1))
+}
+
+// Command::new only finds .exe on Windows; npm, pnpm and gem are .cmd shims found via PATHEXT.
+fn resolve(program: &str) -> std::io::Result<PathBuf> {
+    which::which(program).map_err(|e| Error::new(ErrorKind::NotFound, e))
 }
