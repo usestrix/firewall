@@ -2,6 +2,7 @@
 name = "firewall"
 version = "0.1.0"
 edition = "2021"
+license = "Apache-2.0"
 # proxy-test lives under tests/, which cargo would otherwise also claim as an
 # integration test; new tests/*.rs need an explicit [[test]] entry.
 autotests = false
