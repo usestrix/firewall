@@ -112,18 +112,22 @@ final class InstallerModel: NSObject, ObservableObject {
         log("Setup complete")
     }
 
-    /// Every stage runs even if an earlier one fails, so a partial uninstall never strands the rest.
+    /// After the admin gate, every stage runs even if an earlier one fails, so a partial uninstall never strands the rest.
     func uninstall() async {
         busy = true
         defer { busy = false }
         completed = false
         removed = false
 
+        // Install needs admin, so uninstall does too: untrusting the CA prompts for it, and a cancel stops here.
+        guard await untrustAuthorities() else {
+            log("Uninstall cancelled")
+            return
+        }
         // The extension owns the private key, so ask it before tearing down the session that carries the request.
         let strandedKey = await removeStoredCA()
         await removeConfiguration()
         await deactivate()
-        untrustAuthorities()
         if let strandedKey { trustStep = .failed(strandedKey) }
 
         let failed = [extensionStep, screeningStep, trustStep].contains(where: \.isFailed)
@@ -213,26 +217,32 @@ final class InstallerModel: NSObject, ObservableObject {
         }
     }
 
-    private func untrustAuthorities() {
+    private func untrustAuthorities() async -> Bool {
         trustStep = .running("Removing certificate trust")
         let authorities = TrustStore.trustedAuthorities(commonName: FirewallIDs.caCommonName)
         guard !authorities.isEmpty else {
             log("No trusted Firewall certificate authorities found")
             trustStep = .pending
-            return
+            return true
         }
 
-        var failure: String?
-        for authority in authorities {
+        // Live CA last, so a cancelled prompt leaves screening working.
+        let pem = try? await providerMessage("ca")
+        let live = pem.flatMap { try? TrustStore.certificate(pem: $0) }.map(TrustStore.fingerprint)
+        let stale = authorities.filter { TrustStore.fingerprint($0) != live }
+        let current = authorities.filter { TrustStore.fingerprint($0) == live }
+        for authority in stale + current {
             do {
                 try TrustStore.untrust(authority)
                 log("Trust removed for \(TrustStore.fingerprint(authority))")
             } catch {
-                failure = error.localizedDescription
+                trustStep = .failed(error.localizedDescription)
                 log("Untrust failed: \(error.localizedDescription)")
+                return false
             }
         }
-        trustStep = failure.map(StepStatus.failed) ?? .pending
+        trustStep = .pending
+        return true
     }
 
     /// Only root can delete the key, so the extension does it; returns what to report if it survived.
