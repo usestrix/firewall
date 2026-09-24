@@ -8,6 +8,7 @@ pub fn https_url(req: &Request) -> Option<String> {
         Some(host) => host,
         None => Cow::Borrowed(req.headers().get(HOST)?.to_str().ok()?),
     };
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
     Some(format!("https://{host}{}", req.uri().request_target()))
 }
 

@@ -19,12 +19,17 @@ fn requests_always_go_out_over_tls() {
         "https://pypi.org/six",
         "http://pypi.org:443/six",
         "http://user:pass@pypi.org/six",
+        "http://PYPI.ORG./six",
     ];
     for target in targets {
         assert_eq!(https_url(&request(target, None)).unwrap_or_default(), "https://pypi.org/six");
     }
     assert_eq!(
         https_url(&request("/six", Some("pypi.org"))).unwrap_or_default(),
+        "https://pypi.org/six"
+    );
+    assert_eq!(
+        https_url(&request("/six", Some("PyPI.org."))).unwrap_or_default(),
         "https://pypi.org/six"
     );
     assert_eq!(https_url(&request("/six", None)), None);

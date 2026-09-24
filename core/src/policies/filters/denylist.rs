@@ -149,19 +149,23 @@ pub fn describe(advisories: &[&Advisory]) -> String {
     parts.join(", ")
 }
 
-/// A failed fetch leaves the last good list in place.
+/// A failed fetch leaves the last good list in place; a list that never loaded is retried every tick.
 async fn watch(source: DenylistSource, token: Option<String>, lists: Arc<Lists>) {
     let period = Duration::from_secs(source.poll_secs);
     let mut seen = revision(&source, token.as_deref(), None).await;
     loop {
         tokio::time::sleep(period).await;
-        let Some(current) = revision(&source, token.as_deref(), seen.as_deref()).await else {
-            continue;
-        };
-        info!(revision = %current, "denylist source changed");
-        seen = Some(current);
+        let changed = revision(&source, token.as_deref(), seen.as_deref()).await;
+        if let Some(current) = &changed {
+            info!(revision = %current, "denylist source changed");
+            seen = changed.clone();
+        }
         for (eco, cell) in lists.iter() {
             let Some(list) = cell.get() else { continue };
+            let failed = list.read().expect("denylist lock").is_err();
+            if changed.is_none() && !failed {
+                continue;
+            }
             if let Ok(packages) = load(&source, token.as_deref(), eco).await {
                 *list.write().expect("denylist lock") = Arc::new(Ok(packages));
             }

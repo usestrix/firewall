@@ -9,6 +9,7 @@ use rama::bytes::Bytes;
 use rama::error::BoxError;
 use rama::io::BridgeIo;
 use rama::layer::ConsumeErrLayer;
+use rama::net::address::Domain;
 use rama::net::apple::networkextension::ffi::tproxy::TransparentProxyInitConfig;
 use rama::net::apple::networkextension::tproxy::{
     FlowAction, TransparentProxyConfig, TransparentProxyEngineBuilder, TransparentProxyFlowMeta,
@@ -69,7 +70,8 @@ impl TransparentProxyHandler for Handler {
     {
         // Skip peeking when the client's own hostname is not a registry; it could misreport it.
         let hostname = meta.remote_hostname.as_deref();
-        if hostname.is_some_and(|host| !self.hosts.contains(&host)) {
+        let registry = |host: &str| self.hosts.iter().any(|h| Domain::from_static(h) == host);
+        if hostname.is_some_and(|host| !registry(host)) {
             return FlowAction::Passthrough;
         }
         let service = ConsumeErrLayer::trace_as_debug().into_layer(self.service.clone());

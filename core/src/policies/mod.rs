@@ -61,7 +61,8 @@ pub async fn decide(request_target: &str, firewall: &Firewall) -> Decision {
 }
 
 pub async fn screen(url: &str, firewall: &Firewall) -> Option<String> {
-    let (registry, rest) = firewall.match_on(url, |r| r.upstream)?;
+    let path = url.split_once('?').map_or(url, |(path, _)| path);
+    let (registry, rest) = firewall.match_on(path, |r| r.upstream)?;
     let Some(pkg) = firewall.resolve(registry, rest).pkg else {
         info!(eco = registry.eco, %url, "no pattern names a package here");
         return None;

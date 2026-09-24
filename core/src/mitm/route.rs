@@ -32,8 +32,7 @@ where
         input: InputWithClientHello<BridgeIo<Ingress, Egress>>,
     ) -> Result<(), Self::Error> {
         let server_name = input.client_hello.ext_server_name();
-        let screened = server_name
-            .is_some_and(|name| self.hosts.iter().any(|host| name.as_str() == *host));
+        let screened = server_name.is_some_and(|name| self.hosts.iter().any(|host| name == host));
         let server_name = server_name.map(tracing::field::display);
         if screened {
             tracing::debug!(server_name, "terminating TLS for a screened registry");
