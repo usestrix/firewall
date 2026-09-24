@@ -6,6 +6,8 @@ pub static BUN: Manager = Manager {
     env: &[
         ("http_proxy", PROXY),
         ("https_proxy", PROXY),
+        ("HTTP_PROXY", PROXY),
+        ("HTTPS_PROXY", PROXY),
         ("npm_config_registry", "http://registry.npmjs.org/"),
     ],
     args: &[],

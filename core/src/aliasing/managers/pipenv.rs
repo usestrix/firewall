@@ -2,6 +2,13 @@ use super::{Manager, PROXY, PYPI_SIMPLE};
 
 pub static PIPENV: Manager = Manager {
     command: "pipenv",
-    env: &[("HTTP_PROXY", PROXY), ("HTTPS_PROXY", PROXY), ("PIPENV_PYPI_MIRROR", PYPI_SIMPLE)],
+    env: &[
+        ("HTTP_PROXY", PROXY),
+        ("HTTPS_PROXY", PROXY),
+        // urllib prefers lowercase, so a user's own http_proxy would otherwise win.
+        ("http_proxy", PROXY),
+        ("https_proxy", PROXY),
+        ("PIPENV_PYPI_MIRROR", PYPI_SIMPLE),
+    ],
     args: &[],
 };
