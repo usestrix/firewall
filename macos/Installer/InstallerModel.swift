@@ -52,7 +52,8 @@ final class InstallerModel: NSObject, ObservableObject {
     private var pendingRequest: CheckedContinuation<Void, Error>?
     private var statusObserver: NSObjectProtocol?
     // NE only posts status notifications for connections that are still referenced.
-    private var watched: NETransparentProxyManager?
+    @Published private var watched: NETransparentProxyManager?
+    var configured: Bool { watched != nil }
 
     override init() {
         super.init()
@@ -128,13 +129,38 @@ final class InstallerModel: NSObject, ObservableObject {
         let failed = [extensionStep, screeningStep, trustStep].contains(where: \.isFailed)
         removed = !failed
         log(failed ? "Uninstall finished with errors" : "Uninstall complete")
+        guard removed else { return }
+
+        do {
+            try FileManager.default.trashItem(at: Bundle.main.bundleURL, resultingItemURL: nil)
+        } catch {
+            log("Could not move the app to the Trash: \(error.localizedDescription)")
+        }
+        let alert = NSAlert()
+        alert.messageText = "Firewall is uninstalled"
+        alert.informativeText = "Reboot to finish removing the extension."
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+        NSApp.terminate(nil)
     }
 
     /// Restarting the tunnel rebuilds the provider, which is what makes it re-read the config.
     func restart() async {
         busy = true
         defer { busy = false }
-        _ = await stage(\.screeningStep, running: "Restarting screening", work: restartScreening)
+        guard await stage(\.screeningStep, running: "Restarting screening", work: restartScreening) else { return }
+        // A restart can mint a new CA when the screened hosts change.
+        _ = await stage(\.trustStep, running: "Waiting for the extension's CA", work: trustCertificateAuthority)
+    }
+
+    func setEnabled(_ enabled: Bool) async {
+        busy = true
+        defer { busy = false }
+        if enabled {
+            _ = await stage(\.screeningStep, running: "Starting screening", work: startScreening)
+        } else {
+            _ = await stage(\.screeningStep, running: "Stopping screening", work: stopScreening)
+        }
     }
 
     private func stage(_ step: ReferenceWritableKeyPath<InstallerModel, StepStatus>,
@@ -275,6 +301,15 @@ final class InstallerModel: NSObject, ObservableObject {
         return try await startScreening()
     }
 
+    private func stopScreening() async throws -> String {
+        guard let manager = try await loadManager() else { throw InstallerError.extensionUnavailable }
+        manager.isEnabled = false
+        try await manager.saveToPreferences()
+        manager.connection.stopVPNTunnel()
+        _ = try await wait(for: .disconnected, on: manager.connection)
+        return "Screening disabled"
+    }
+
     private func wait(for status: NEVPNStatus, on connection: NEVPNConnection) async throws -> Bool {
         for _ in 0 ..< 60 {
             if connection.status == status { return true }
@@ -293,7 +328,7 @@ final class InstallerModel: NSObject, ObservableObject {
             try TrustStore.trust(certificate)
         }
         let fingerprint = TrustStore.fingerprint(certificate)
-        // A re-minted CA would otherwise leave the previous root trusted alongside it.
+        // A stale root of the same name makes TLS clients that pick an issuer by name fail intermittently.
         for authority in TrustStore.trustedAuthorities(commonName: FirewallIDs.caCommonName)
         where TrustStore.fingerprint(authority) != fingerprint {
             try TrustStore.untrust(authority)

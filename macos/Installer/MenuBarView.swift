@@ -13,21 +13,14 @@ struct MenuBarView: View {
             SetupWindow.open(openWindow)
         }
 
+        Button(model.screening ? "Pause" : "Resume") {
+            Task { await model.setEnabled(!model.screening) }
+        }
+        .disabled(model.busy || !model.configured)
+
         Button("Restart") {
             Task { await model.restart() }
         }
         .disabled(model.busy)
-
-        Button("Uninstall") {
-            Task { await model.uninstall() }
-        }
-        .disabled(model.busy)
-
-        Divider()
-
-        Button("Quit Firewall") {
-            NSApplication.shared.terminate(nil)
-        }
-        .keyboardShortcut("q")
     }
 }

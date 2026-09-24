@@ -56,6 +56,9 @@ targets:
         com.apple.developer.team-identifier: ${TEAM}
         com.apple.developer.networking.networkextension:
           - app-proxy-provider
+        # NE requires NEMachServiceName to start with one of these.
+        com.apple.security.application-groups:
+          - ${TEAM}.ai.strix.firewall
         com.apple.security.network.client: true
         com.apple.security.network.server: true
     dependencies:
