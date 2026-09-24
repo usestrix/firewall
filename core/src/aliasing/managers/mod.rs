@@ -23,7 +23,6 @@ pub use uv::UV;
 pub const PYPI_SIMPLE: &str = "http://pypi.org/simple";
 
 pub const PROXY: &str = "{proxy}";
-pub const TMP: &str = "{tmp}";
 
 /// Command-line flags the manager needs; `when` limits them to those subcommands, empty means always.
 pub struct Args {
@@ -59,7 +58,5 @@ pub fn arguments(proxy: &str, manager: &Manager, typed: &[String]) -> Vec<String
 }
 
 fn expand(value: &str, proxy: &str) -> String {
-    let tmp = std::env::temp_dir();
-    let tmp = tmp.to_string_lossy();
-    value.replace(PROXY, proxy).replace(TMP, tmp.trim_end_matches('/'))
+    value.replace(PROXY, proxy)
 }
