@@ -66,12 +66,16 @@ async fn handle(req: Request, firewall: &Firewall) -> Result<Response, Infallibl
     }
 
     info!(method = %req.method(), %url, "forwarding");
-    let index = firewall.is_index_url(&url);
+    // Only an HTTPS registry was downgraded to reach us, so only it is upgraded back and rewritten.
+    let tls = firewall.is_https_url(&url);
+    let index = tls && firewall.is_index_url(&url);
     let (mut parts, body) = req.into_parts();
-    let Ok(uri) = url.parse() else {
-        return Ok(text(400, "firewall: expected an absolute URL\n"));
-    };
-    parts.uri = uri;
+    if tls {
+        let Ok(uri) = url.parse() else {
+            return Ok(text(400, "firewall: expected an absolute URL\n"));
+        };
+        parts.uri = uri;
+    }
 
     let client = DecompressionLayer::new().into_layer(EasyHttpWebClient::default());
     let response = match client.serve(Request::from_parts(parts, body)).await {

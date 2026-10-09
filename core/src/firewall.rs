@@ -50,6 +50,11 @@ impl Firewall {
         hosts
     }
 
+    pub fn is_https_url(&self, url: &str) -> bool {
+        let host = host_of(url);
+        self.config.registries.iter().any(|r| r.upstream.starts_with("https://") && r.host() == host)
+    }
+
     pub fn is_index_url(&self, url: &str) -> bool {
         self.config.registries.iter().any(|r| r.index && r.host() == host_of(url))
     }
