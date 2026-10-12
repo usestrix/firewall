@@ -80,6 +80,18 @@ impl FirewallConfig {
     pub fn local_url(&self, path: &str) -> String {
         crate::local_url(self.port, path)
     }
+
+    /// Without building a `Firewall`, which needs a runtime.
+    pub fn hosts(&self) -> Vec<&'static str> {
+        let mut hosts: Vec<&'static str> = Vec::new();
+        for registry in &self.registries {
+            let host = registry.host();
+            if !hosts.contains(&host) {
+                hosts.push(host);
+            }
+        }
+        hosts
+    }
 }
 
 pub fn path() -> Option<PathBuf> {

@@ -40,14 +40,7 @@ impl Firewall {
     }
 
     pub fn hosts(&self) -> Vec<&'static str> {
-        let mut hosts: Vec<&'static str> = Vec::new();
-        for registry in &self.config.registries {
-            let host = registry.host();
-            if !hosts.contains(&host) {
-                hosts.push(host);
-            }
-        }
-        hosts
+        self.config.hosts()
     }
 
     pub fn is_index_url(&self, url: &str) -> bool {
