@@ -17,18 +17,29 @@ impl Invocation {
     pub fn new(manager: &'static Manager, args: Vec<String>) -> Self {
         Invocation { manager, args }
     }
+
+    /// A manager's name followed by its arguments, kept verbatim, `--` included.
+    pub fn parse(mut args: impl Iterator<Item = String>) -> Option<Self> {
+        let command = args.next()?;
+        let manager = MANAGERS.iter().find(|manager| manager.command == command)?;
+        Some(Invocation::new(manager, args.collect()))
+    }
+
+    /// What the manager is run with: the typed arguments plus ours.
+    pub fn arguments(&self, proxy: &str) -> Vec<String> {
+        let mut args = self.args.clone();
+        let ours = managers::arguments(proxy, self.manager, &args);
+        // Anything after `--` belongs to another program, so ours go before it.
+        let at = args.iter().position(|arg| arg == "--").unwrap_or(args.len());
+        args.splice(at..at, ours);
+        args
+    }
 }
 
 pub fn run(port: u16, invocation: &Invocation, dir: Option<&Path>) -> std::io::Result<i32> {
     let proxy = crate::local_url(port, "");
-    let mut args = invocation.args.clone();
-    let ours = managers::arguments(&proxy, invocation.manager, &args);
-    // Anything after `--` belongs to another program, so ours go before it.
-    let at = args.iter().position(|arg| arg == "--").unwrap_or(args.len());
-    args.splice(at..at, ours);
-
     let mut command = Command::new(resolve(invocation.manager.command)?);
-    command.args(args);
+    command.args(invocation.arguments(&proxy));
     if let Some(dir) = dir {
         command.current_dir(dir);
     }

@@ -1,5 +1,16 @@
 use firewall::aliasing::managers::*;
+use firewall::aliasing::Invocation;
 use firewall::Firewall;
+
+#[test]
+fn arguments_after_a_double_dash_reach_the_program() {
+    let typed = ["cargo", "run", "--", "--release"].map(String::from);
+    let invocation = Invocation::parse(typed.into_iter()).expect("cargo is a manager");
+    let args = invocation.arguments("http://127.0.0.1:9000");
+    assert_eq!(args.first().map(String::as_str), Some("run"));
+    assert_eq!(args[args.len() - 2..], ["--", "--release"]);
+    assert!(Invocation::parse(["serve".to_string()].into_iter()).is_none());
+}
 
 #[test]
 fn recipes_expand_into_the_environment() {

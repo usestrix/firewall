@@ -12,6 +12,13 @@ enum SubCommand {
 }
 
 fn main() {
+    // bpaf swallows a `--` the manager needs to see, so a manager's arguments skip it.
+    let args: Option<Vec<String>> =
+        std::env::args_os().skip(1).map(|arg| arg.into_string().ok()).collect();
+    if let Some(invocation) = args.and_then(|args| Invocation::parse(args.into_iter())) {
+        firewall::init_logging("warn");
+        run(invocation)
+    }
     match options().run() {
         SubCommand::Serve => {
             firewall::init_logging("info");
