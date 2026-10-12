@@ -41,8 +41,10 @@ pub struct Manager {
 pub static MANAGERS: &[&Manager] =
     &[&NPM, &PIP, &PIP3, &CARGO, &GO, &GEM, &UV, &PDM, &PIPENV, &PNPM, &BUN];
 
-pub fn variables(proxy: &str, manager: &Manager) -> Vec<(String, String)> {
-    manager.env.iter().map(|(key, value)| (key.to_string(), expand(value, proxy))).collect()
+/// Every manager's variables, so whichever the command starts is pointed at the firewall.
+pub fn variables(proxy: &str) -> Vec<(String, String)> {
+    let env = MANAGERS.iter().flat_map(|manager| manager.env);
+    env.map(|(key, value)| (key.to_string(), expand(value, proxy))).collect()
 }
 
 pub fn arguments(proxy: &str, manager: &Manager, typed: &[String]) -> Vec<String> {

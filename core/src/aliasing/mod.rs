@@ -9,30 +9,37 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub struct Invocation {
-    pub manager: &'static Manager,
+    pub program: String,
     pub args: Vec<String>,
 }
 
 impl Invocation {
-    pub fn new(manager: &'static Manager, args: Vec<String>) -> Self {
-        Invocation { manager, args }
+    pub fn new(program: String, args: Vec<String>) -> Self {
+        Invocation { program, args }
+    }
+
+    /// What the program is run with: the typed arguments plus any its manager needs.
+    pub fn arguments(&self, proxy: &str) -> Vec<String> {
+        let mut args = self.args.clone();
+        let Some(manager) = MANAGERS.iter().find(|manager| manager.command == self.program) else {
+            return args;
+        };
+        let ours = managers::arguments(proxy, manager, &args);
+        // Anything after `--` belongs to another program, so ours go before it.
+        let at = args.iter().position(|arg| arg == "--").unwrap_or(args.len());
+        args.splice(at..at, ours);
+        args
     }
 }
 
 pub fn run(port: u16, invocation: &Invocation, dir: Option<&Path>) -> std::io::Result<i32> {
     let proxy = crate::local_url(port, "");
-    let mut args = invocation.args.clone();
-    let ours = managers::arguments(&proxy, invocation.manager, &args);
-    // Anything after `--` belongs to another program, so ours go before it.
-    let at = args.iter().position(|arg| arg == "--").unwrap_or(args.len());
-    args.splice(at..at, ours);
-
-    let mut command = Command::new(resolve(invocation.manager.command)?);
-    command.args(args);
+    let mut command = Command::new(resolve(&invocation.program)?);
+    command.args(invocation.arguments(&proxy));
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
-    for (key, value) in managers::variables(&proxy, invocation.manager) {
+    for (key, value) in managers::variables(&proxy) {
         command.env(key, value);
     }
     Ok(command.status()?.code().unwrap_or(1))

@@ -53,7 +53,7 @@ name = "managers"
 path = "tests/managers.rs"
 
 [dependencies]
-bpaf = "0.9.28"
+clap = "4.6.6"
 directories = "6.0.0"
 percent-encoding = "2.3.2"
 rama = { version = "0.4.0", features = ["boring", "http-full", "ring", "rustls"] }

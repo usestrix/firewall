@@ -1,15 +1,20 @@
 use crate::http::{blocked, https_url, text};
 use crate::{policies, telemetry};
 use crate::{Firewall, FirewallConfig};
+use rama::dns::client::DnsConnectorLayer;
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::header::CONTENT_LENGTH;
 use rama::http::layer::decompression::DecompressionLayer;
 use rama::http::layer::remove_header::{RemoveRequestHeaderLayer, RemoveResponseHeaderLayer};
+use rama::http::layer::upgrade::{EagerHttpProxyConnector, UpgradeLayer};
 use rama::http::server::HttpServer;
 use rama::http::{Body, Method, Request, Response};
+use rama::matcher::match_fn;
+use rama::net::proxy::IoForwardService;
 use rama::rt::Executor;
 use rama::service::service_fn;
+use rama::tcp::client::service::TcpConnector;
 use rama::tcp::server::TcpListener;
 use rama::{Layer, Service};
 use std::convert::Infallible;
@@ -31,8 +36,26 @@ pub fn spawn(port: u16, config: FirewallConfig) -> std::io::Result<u16> {
                 Ok(listener) => listener,
                 Err(e) => return error!(error = %e, "forward proxy could not take over the socket"),
             };
+            // Tunnels skip screening, so a registry's CONNECT falls through to `handle`, which refuses it.
+            let hosts = firewall.hosts();
+            let tunnel = UpgradeLayer::new(
+                exec.clone(),
+                match_fn(move |req: &Request| {
+                    let host = req.uri().host().map(|host| host.to_str());
+                    req.method() == Method::CONNECT
+                        && host.is_some_and(|host| !hosts.contains(&host.as_ref()))
+                }),
+                EagerHttpProxyConnector::new(
+                    DnsConnectorLayer::new().into_layer(TcpConnector::new()),
+                    IoForwardService::default(),
+                ),
+            );
             let server = HttpServer::auto(exec).service(
-                (RemoveResponseHeaderLayer::hop_by_hop(), RemoveRequestHeaderLayer::hop_by_hop())
+                (
+                    RemoveResponseHeaderLayer::hop_by_hop(),
+                    RemoveRequestHeaderLayer::hop_by_hop(),
+                    tunnel,
+                )
                     .into_layer(service_fn(move |req: Request| {
                         let firewall = Arc::clone(&firewall);
                         async move { handle(req, &firewall).await }
