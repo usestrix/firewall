@@ -3,7 +3,7 @@ mod issuer;
 mod route;
 mod screen;
 
-pub use ca::{CaSigner, CertificateAuthority};
+pub use ca::{crl, CaSigner, CertificateAuthority, COMMON_NAME, ORGANIZATION};
 
 use crate::Firewall;
 use issuer::ConstrainedCertIssuer;
@@ -25,14 +25,16 @@ type RelayService = Arc<HttpMitmRelay<FirewallLayer>>;
 type InterceptService =
     TlsMitmRelayService<CachedBoringMitmCertIssuer<ConstrainedCertIssuer>, RelayService>;
 
+/// `crl` is where leaves say an empty CRL is served, for verifiers that insist on one.
 pub fn mitm_service(
     firewall: Arc<Firewall>,
     ca: &CertificateAuthority,
     signer: CaSigner,
+    crl: Option<String>,
     exec: Executor,
 ) -> MitmService {
     let hosts = firewall.hosts();
-    let issuer = ConstrainedCertIssuer::new(ca.crt.clone(), signer, hosts.clone());
+    let issuer = ConstrainedCertIssuer::new(ca.crt.clone(), signer, hosts.clone(), crl);
 
     let relay = Arc::new(HttpMitmRelay::new(exec).with_http_middleware(FirewallLayer { firewall }));
 

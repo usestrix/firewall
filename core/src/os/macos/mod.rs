@@ -108,7 +108,7 @@ fn handler(exec: Executor) -> Result<Handler, BoxError> {
     let signer: mitm::CaSigner = Arc::new(key);
     let ca = install::certificate_authority(&hosts, &*signer);
     let ca = Arc::new(ca.inspect_err(|_| telemetry::error("ca"))?);
-    let service = mitm::mitm_service(firewall, &ca, signer, exec);
+    let service = mitm::mitm_service(firewall, &ca, signer, None, exec);
     Ok(Handler { ca, hosts, service })
 }
 
