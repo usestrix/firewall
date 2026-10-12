@@ -99,11 +99,13 @@ fn print_setup(config: &FirewallConfig) {
     println!("         [source.firewall] registry = \"sparse+{base}/cargo/index/\"\n");
 }
 
-/// In the syntax of the shell the user most likely has: PowerShell on Windows.
 fn alias(program: &str) -> String {
     if cfg!(windows) {
         // Set-Alias cannot carry arguments, so a function stands in.
-        format!("function npm {{ {program} npm @args }}")
+        format!(
+            "PowerShell:  function npm {{ {program} npm @args }}\n  \
+             cmd:         doskey npm={program} npm $*"
+        )
     } else {
         format!("alias npm='{program} npm'")
     }
