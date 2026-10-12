@@ -1,64 +1,50 @@
-use bpaf::{any, choice, pure, OptionParser, Parser};
-use firewall::aliasing::{self, Invocation, Manager, MANAGERS};
+use clap::{Arg, Command};
+use firewall::aliasing::{self, Invocation, MANAGERS};
 use firewall::{config, proxy, telemetry, FirewallConfig};
 use std::io::ErrorKind;
 use std::path::Path;
 use std::process::exit;
 use tracing::{error, info};
 
-enum SubCommand {
-    Serve,
-    Run(Invocation),
-}
-
 fn main() {
-    match options().run() {
-        SubCommand::Serve => {
-            firewall::init_logging("info");
-            serve()
-        }
-        SubCommand::Run(invocation) => {
-            firewall::init_logging("warn");
-            run(invocation)
-        }
+    let matches = options().get_matches();
+    if matches.subcommand_matches("serve").is_some() {
+        firewall::init_logging("info");
+        serve()
     }
+    let mut command = matches.get_many::<String>("COMMAND").unwrap().cloned();
+    let program = command.next().unwrap();
+    firewall::init_logging("warn");
+    run(Invocation::new(program, command.collect()))
 }
 
-fn options() -> OptionParser<SubCommand> {
+fn options() -> Command {
     let program = program_name();
+    let managers: Vec<_> = MANAGERS.iter().map(|manager| manager.command).collect();
     let footer = format!(
-        "Run a package manager through {program} to screen what it installs:\n   \
-         {program} npm install left-pad\n \n \
-         Alias it to screen every install without changing how you type:\n   \
-         alias npm='{program} npm'"
+        "Run a command through {program} to screen what it installs:\n  \
+         {program} npm install left-pad\n\n\
+         Alias it to screen every install without changing how you type:\n  \
+         alias npm='{program} npm'\n\n\
+         Supported package managers: {}",
+        managers.join(", ")
     );
-    let serve = pure(())
-        .map(|()| SubCommand::Serve)
-        .to_options()
-        .descr("Serve a local registry for package managers configured to use it")
-        .command("serve");
-
-    let mut commands: Vec<_> = MANAGERS
-        .iter()
-        .map(|manager| package(manager, &program).boxed())
-        .collect();
-    commands.push(serve.boxed());
-    choice(commands)
-        .to_options()
-        .descr("Screens package downloads before they reach your machine")
-        .footer(Box::leak(footer.into_boxed_str()) as &str)
-        .fallback_to_usage()
-}
-
-fn package(manager: &'static Manager, program: &str) -> impl Parser<SubCommand> {
-    let name = manager.command;
-    let descr = format!("Run {name} with downloads screened: {program} {name} ARGS...");
-    any::<String, String, _>("ARGS", Some)
-        .many()
-        .map(move |args| SubCommand::Run(Invocation::new(manager, args)))
-        .to_options()
-        .descr(Box::leak(descr.into_boxed_str()) as &str)
-        .command(name)
+    Command::new("firewall")
+        .about("Screens package downloads before they reach your machine")
+        .after_help(footer)
+        .arg_required_else_help(true)
+        .args_conflicts_with_subcommands(true)
+        .subcommand(
+            Command::new("serve")
+                .about("Serve a local registry for package managers configured to use it"),
+        )
+        .arg(
+            Arg::new("COMMAND")
+                .help("A command to run with its package downloads screened")
+                .num_args(1..)
+                .trailing_var_arg(true)
+                .allow_hyphen_values(true),
+        )
 }
 
 fn serve() -> ! {
@@ -82,7 +68,7 @@ fn serve() -> ! {
 }
 
 fn run(invocation: Invocation) -> ! {
-    let command = invocation.manager.command;
+    let command = &invocation.program;
     let port = match aliasing::spawn(0, load()) {
         Ok(port) => port,
         Err(e) => fail("spawn", &format!("could not start the firewall: {e}")),
