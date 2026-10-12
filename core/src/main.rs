@@ -25,11 +25,13 @@ fn options() -> Command {
         "Run a command through {program} to screen what it installs:\n  \
          {program} npm install left-pad\n\n\
          Alias it to screen every install without changing how you type:\n  \
-         alias npm='{program} npm'\n\n\
+         {}\n\n\
          Supported package managers: {}",
+        alias(&program),
         managers.join(", ")
     );
     Command::new("firewall")
+        .bin_name(&program)
         .about("Screens package downloads before they reach your machine")
         .after_help(footer)
         .arg_required_else_help(true)
@@ -91,10 +93,30 @@ fn print_setup(config: &FirewallConfig) {
     let base = config.local_url("");
     println!("Firewall listening on {base}\n");
     println!("Point your package managers at it:");
-    println!("  npm    npm_config_registry={base}/npm/");
-    println!("  pip    PIP_INDEX_URL={base}/pypi/simple/");
+    println!("  npm    {}", variable("npm_config_registry", &format!("{base}/npm/")));
+    println!("  pip    {}", variable("PIP_INDEX_URL", &format!("{base}/pypi/simple/")));
     println!("  cargo  [source.crates-io] replace-with = \"firewall\"");
     println!("         [source.firewall] registry = \"sparse+{base}/cargo/index/\"\n");
+}
+
+fn alias(program: &str) -> String {
+    if cfg!(windows) {
+        // Set-Alias cannot carry arguments, so a function stands in.
+        format!(
+            "PowerShell:  function npm {{ {program} npm @args }}\n  \
+             cmd:         doskey npm={program} npm $*"
+        )
+    } else {
+        format!("alias npm='{program} npm'")
+    }
+}
+
+fn variable(key: &str, value: &str) -> String {
+    if cfg!(windows) {
+        format!("$env:{key} = \"{value}\"")
+    } else {
+        format!("{key}={value}")
+    }
 }
 
 fn load() -> FirewallConfig {
@@ -113,7 +135,9 @@ fn fail(kind: &'static str, message: &str) -> ! {
 
 fn program_name() -> String {
     let arg = std::env::args_os().next().unwrap_or_default();
-    match Path::new(&arg).file_name() {
+    // Without `.exe` on Windows, which is how it is typed.
+    let path = Path::new(&arg);
+    match if cfg!(windows) { path.file_stem() } else { path.file_name() } {
         Some(name) => name.to_string_lossy().into_owned(),
         None => "firewall".into(),
     }
