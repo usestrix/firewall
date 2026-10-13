@@ -8,7 +8,7 @@ use rcgen::{
 use std::sync::Arc;
 use time::{Duration, OffsetDateTime};
 
-/// Held in the Secure Enclave on macOS, in memory elsewhere.
+/// Held in the Secure Enclave on macOS, the TPM on Windows, in memory elsewhere.
 pub type CaSigner = Arc<dyn SigningKey + Send + Sync>;
 
 pub struct CertificateAuthority {
