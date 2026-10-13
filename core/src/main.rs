@@ -48,18 +48,33 @@ fn options() -> Command {
                 .allow_hyphen_values(true),
         );
     #[cfg(windows)]
-    let command = command.subcommand(Command::new("service").hide(true));
+    let command = command
+        .subcommand(Command::new("install").about("Screen every package download on this machine"))
+        .subcommand(Command::new("uninstall").about("Stop screening and remove the firewall"))
+        .subcommand(Command::new("service").hide(true));
     command
 }
 
-/// The service the installer registers; it logs to a file, having no console.
+/// Machine-wide screening through the hosts file and a service; needs an elevated shell.
 #[cfg(windows)]
 fn windows(matches: &clap::ArgMatches) {
-    if matches.subcommand_name() == Some("service") {
-        match firewall::os::windows::service() {
-            Ok(()) => exit(0),
-            Err(e) => fail("service", &format!("could not service: {e}")),
+    use firewall::os::windows;
+    let (kind, result) = match matches.subcommand_name() {
+        // The service logs to a file; it has no console.
+        Some("service") => ("service", windows::service().map_err(Into::into)),
+        Some("install") => {
+            firewall::init_logging("info");
+            ("install", windows::install())
         }
+        Some("uninstall") => {
+            firewall::init_logging("info");
+            ("uninstall", windows::uninstall())
+        }
+        _ => return,
+    };
+    match result {
+        Ok(()) => exit(0),
+        Err(e) => fail(kind, &format!("could not {kind}: {e}")),
     }
 }
 
