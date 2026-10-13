@@ -12,6 +12,8 @@ fn main() {
         firewall::init_logging("info");
         serve()
     }
+    #[cfg(windows)]
+    windows(&matches);
     let mut command = matches.get_many::<String>("COMMAND").unwrap().cloned();
     let program = command.next().unwrap();
     firewall::init_logging("warn");
@@ -29,7 +31,7 @@ fn options() -> Command {
          Supported package managers: {}",
         managers.join(", ")
     );
-    Command::new("firewall")
+    let command = Command::new("firewall")
         .about("Screens package downloads before they reach your machine")
         .after_help(footer)
         .arg_required_else_help(true)
@@ -44,7 +46,21 @@ fn options() -> Command {
                 .num_args(1..)
                 .trailing_var_arg(true)
                 .allow_hyphen_values(true),
-        )
+        );
+    #[cfg(windows)]
+    let command = command.subcommand(Command::new("service").hide(true));
+    command
+}
+
+/// The service the installer registers; it logs to a file, having no console.
+#[cfg(windows)]
+fn windows(matches: &clap::ArgMatches) {
+    if matches.subcommand_name() == Some("service") {
+        match firewall::os::windows::service() {
+            Ok(()) => exit(0),
+            Err(e) => fail("service", &format!("could not service: {e}")),
+        }
+    }
 }
 
 fn serve() -> ! {
