@@ -1,10 +1,12 @@
 use rama::error::BoxError;
 use rama::tls::boring::core::x509::X509;
 use rcgen::{
-    BasicConstraints, CertificateParams, DistinguishedName, DnType, GeneralSubtree, IsCa,
-    KeyUsagePurpose, NameConstraints, SigningKey,
+    BasicConstraints, CertificateParams, CertificateRevocationListParams, DistinguishedName,
+    DnType, GeneralSubtree, IsCa, Issuer, KeyIdMethod, KeyUsagePurpose, NameConstraints,
+    SerialNumber, SigningKey,
 };
 use std::sync::Arc;
+use time::{Duration, OffsetDateTime};
 
 /// Held in the Secure Enclave on macOS, in memory elsewhere.
 pub type CaSigner = Arc<dyn SigningKey + Send + Sync>;
@@ -42,6 +44,22 @@ impl CertificateAuthority {
     }
 }
 
+/// Empty, for verifiers that fail closed without one, such as schannel under cargo.
+/// Signed fresh for each fetch; a week's validity outlasts any verifier's cache.
+pub fn crl(hosts: &[&str], signer: &dyn SigningKey) -> Result<Vec<u8>, BoxError> {
+    let now = OffsetDateTime::now_utc();
+    let list = CertificateRevocationListParams {
+        this_update: now - Duration::hours(1),
+        next_update: now + Duration::days(7),
+        crl_number: SerialNumber::from(now.unix_timestamp() as u64),
+        issuing_distribution_point: None,
+        revoked_certs: Vec::new(),
+        key_identifier_method: KeyIdMethod::Sha256,
+    };
+    let ca = params(hosts);
+    Ok(list.signed_by(&Issuer::from_params(&ca, signer))?.der().to_vec())
+}
+
 /// Also used by the issuer, whose issuer name must match the CA's subject.
 pub fn params(hosts: &[&str]) -> CertificateParams {
     let mut name = DistinguishedName::new();
@@ -51,7 +69,8 @@ pub fn params(hosts: &[&str]) -> CertificateParams {
     let mut params = CertificateParams::default();
     params.distinguished_name = name;
     params.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
-    params.key_usages = vec![KeyUsagePurpose::KeyCertSign];
+    // rcgen signs a CRL only for a CA that may.
+    params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     params.name_constraints = Some(NameConstraints {
         permitted_subtrees: hosts
             .iter()

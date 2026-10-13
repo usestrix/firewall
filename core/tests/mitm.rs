@@ -43,3 +43,10 @@ fn stored_ca_is_rejected_when_the_signing_key_changed() {
 
     assert!(mitm::CertificateAuthority::from_blob(&blob, &hosts, &signer()).is_none());
 }
+
+/// rcgen signs a CRL only for a CA with cRLSign, and schannel wants one for every leaf.
+#[test]
+fn ca_signs_an_empty_crl() {
+    let crl = mitm::crl(&["registry.npmjs.org", "pypi.org"], &signer()).expect("sign a crl");
+    assert_eq!(crl[0], 0x30, "a DER SEQUENCE");
+}

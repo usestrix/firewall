@@ -4,7 +4,7 @@ use rama::tls::boring::core::pkey::PKey;
 use rama::tls::boring::core::x509::X509;
 use rama::tls::boring::proxy::cert_issuer::{BoringMitmCertIssuer, MitmIssuedCert};
 use rama::utils::collections::non_empty_vec;
-use rcgen::{CertificateParams, DistinguishedName, DnType, Issuer, KeyPair};
+use rcgen::{CertificateParams, CrlDistributionPoint, DistinguishedName, DnType, Issuer, KeyPair};
 use std::sync::Arc;
 
 /// Leaves name only screened hosts; any other name falls outside the CA's constraint.
@@ -14,12 +14,18 @@ pub struct ConstrainedCertIssuer {
     ca_params: Arc<CertificateParams>,
     signer: CaSigner,
     hosts: Vec<&'static str>,
+    crl: Option<String>,
 }
 
 impl ConstrainedCertIssuer {
-    pub(super) fn new(ca_crt: X509, signer: CaSigner, hosts: Vec<&'static str>) -> Self {
+    pub(super) fn new(
+        ca_crt: X509,
+        signer: CaSigner,
+        hosts: Vec<&'static str>,
+        crl: Option<String>,
+    ) -> Self {
         let ca_params = Arc::new(params(&hosts));
-        Self { ca_crt, ca_params, signer, hosts }
+        Self { ca_crt, ca_params, signer, hosts, crl }
     }
 }
 
@@ -42,6 +48,9 @@ impl BoringMitmCertIssuer for ConstrainedCertIssuer {
         subject.push(DnType::CommonName, common_name);
         let mut leaf = CertificateParams::new(names)?;
         leaf.distinguished_name = subject;
+        if let Some(crl) = &self.crl {
+            leaf.crl_distribution_points = vec![CrlDistributionPoint { uris: vec![crl.clone()] }];
+        }
 
         // The TLS server needs the leaf key in memory, so it can't be the platform key.
         let leaf_key = KeyPair::generate()?;
