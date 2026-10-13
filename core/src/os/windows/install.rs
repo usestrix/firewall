@@ -7,8 +7,14 @@ use std::time::{Duration, Instant};
 use tracing::info;
 use windows_service::service::*;
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
+use windows_sys::Win32::Security::DACL_SECURITY_INFORMATION;
+use windows_sys::Win32::System::Services::SetServiceObjectSecurity;
 
-/// Needs an elevated shell. The hosts file goes last, once the service is listening.
+/// The defaults, except that interactive users may also start, stop and pause it, as the tray does.
+const SERVICE_ACL: &str = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)\
+    (A;;CCLCSWRPWPDTLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)";
+
+/// Needs an elevated shell. The service points the hosts file at itself once it listens.
 pub fn install() -> Result<(), BoxError> {
     let hosts = FirewallConfig::default().hosts();
     stop_service(false)?;
@@ -23,15 +29,6 @@ pub fn install() -> Result<(), BoxError> {
     }
     broadcast_environment();
     start_service()?;
-    let mut contents = without_block(&std::fs::read_to_string(hosts_file())?);
-    if !contents.is_empty() && !contents.ends_with('\n') {
-        contents.push_str("\r\n");
-    }
-    contents += &format!("{BEGIN}\r\n");
-    for (address, host) in redirects(&hosts) {
-        contents += &format!("{address} {host}\r\n");
-    }
-    std::fs::write(hosts_file(), format!("{contents}{END}\r\n"))?;
     info!(?hosts, "registry downloads are now screened");
     Ok(())
 }
@@ -51,12 +48,18 @@ fn start_service() -> Result<(), BoxError> {
         account_name: None,
         account_password: None,
     };
-    let access = ServiceAccess::CHANGE_CONFIG | ServiceAccess::START | ServiceAccess::QUERY_STATUS;
+    let access = ServiceAccess::CHANGE_CONFIG
+        | ServiceAccess::START
+        | ServiceAccess::QUERY_STATUS
+        | ServiceAccess::WRITE_DAC;
     let service = match manager.open_service(SERVICE_NAME, access) {
         Ok(service) => service.change_config(&info).map(|()| service)?,
         Err(_) => manager.create_service(&info, access)?,
     };
     service.set_description("Screens package downloads for known malware")?;
+    with_descriptor(SERVICE_ACL, |acl| unsafe {
+        SetServiceObjectSecurity(service.raw_handle(), DACL_SECURITY_INFORMATION, acl)
+    })?;
     // Registry hosts lead nowhere while it is down, so bring it back.
     let restart = ServiceAction { action_type: ServiceActionType::Restart, delay: Duration::from_secs(5) };
     service.update_failure_actions(ServiceFailureActions {

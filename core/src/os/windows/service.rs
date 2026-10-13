@@ -1,6 +1,6 @@
 use super::ca::{certificate_authority, data_dir_ready};
 use super::tpm::TpmKey;
-use super::{redirects, CRL_ADDRESS, SERVICE_NAME};
+use super::{redirects, write_hosts, CRL_ADDRESS, SERVICE_NAME};
 use crate::config::FirewallConfig;
 use crate::http::{reply, text};
 use crate::{mitm, telemetry, Firewall};
@@ -24,7 +24,6 @@ use std::ffi::OsString;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::Notify;
 use windows_service::service::*;
 use windows_service::service_control_handler::{self, ServiceControlHandlerResult, ServiceStatusHandle};
 use windows_service::{define_windows_service, service_dispatcher};
@@ -51,11 +50,10 @@ fn service_main(_arguments: Vec<OsString>) {
 }
 
 fn serve() -> Result<(), BoxError> {
-    let stop = Arc::new(Notify::new());
-    let stopping = Arc::clone(&stop);
+    let (controls, mut received) = tokio::sync::mpsc::unbounded_channel();
     let status = service_control_handler::register(SERVICE_NAME, move |control| match control {
-        ServiceControl::Stop | ServiceControl::Shutdown => {
-            stopping.notify_one();
+        ServiceControl::Stop | ServiceControl::Shutdown | ServiceControl::Pause | ServiceControl::Continue => {
+            let _ = controls.send(control);
             ServiceControlHandlerResult::NoError
         }
         ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -63,19 +61,33 @@ fn serve() -> Result<(), BoxError> {
     })?;
     report(&status, ServiceState::StartPending, false)?;
     let served = crate::runtime()?.block_on(async {
-        let served = listen(&status).await;
-        match served {
-            Ok(()) => stop.notified().await,
-            Err(_) => telemetry::send().await,
+        let hosts = match listen(&status).await {
+            Ok(hosts) => hosts,
+            Err(error) => {
+                telemetry::send().await;
+                return Err(error);
+            }
+        };
+        // Only pausing lifts the block; a stop or crash keeps it, so traffic fails closed.
+        while let Some(control) = received.recv().await {
+            let (hosts, state) = match control {
+                ServiceControl::Pause => (&[][..], ServiceState::Paused),
+                ServiceControl::Continue => (&hosts[..], ServiceState::Running),
+                _ => break,
+            };
+            match write_hosts(hosts) {
+                Ok(()) => report(&status, state, false)?,
+                Err(error) => tracing::error!(%error, "could not rewrite the hosts file"),
+            }
         }
-        served
+        Ok::<_, BoxError>(())
     });
     // A failed stop is what makes the service manager restart it.
     report(&status, ServiceState::Stopped, served.is_err())?;
     served
 }
 
-async fn listen(status: &ServiceStatusHandle) -> Result<(), BoxError> {
+async fn listen(status: &ServiceStatusHandle) -> Result<Vec<&'static str>, BoxError> {
     telemetry::heartbeat();
     // Never the hosts file, which points back at us; the Firewall's lookups included.
     let mut options = default_resolver_opts();
@@ -110,9 +122,11 @@ async fn listen(status: &ServiceStatusHandle) -> Result<(), BoxError> {
             tokio::spawn(bind(address, port, &exec)?.serve(upstream));
         }
     }
+    // Rewritten on every start, so a restart picks up a changed host list.
+    write_hosts(&hosts)?;
     tracing::info!(?hosts, "screening registry traffic redirected by the hosts file");
     report(status, ServiceState::Running, false)?;
-    Ok(())
+    Ok(hosts)
 }
 
 fn bind(address: Ipv4Addr, port: u16, exec: &Executor) -> std::io::Result<TcpListener> {
@@ -150,7 +164,9 @@ fn report(status: &ServiceStatusHandle, state: ServiceState, failed: bool) -> wi
         service_type: ServiceType::OWN_PROCESS,
         current_state: state,
         controls_accepted: match state {
-            ServiceState::Running => ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
+            ServiceState::Running | ServiceState::Paused => {
+                ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN | ServiceControlAccept::PAUSE_CONTINUE
+            }
             _ => ServiceControlAccept::empty(),
         },
         exit_code: if failed { ServiceExitCode::ServiceSpecific(1) } else { ServiceExitCode::Win32(0) },

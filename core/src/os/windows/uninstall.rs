@@ -11,7 +11,7 @@ use windows_sys::Win32::Foundation::*;
 /// Reverses `install` in the opposite order, and does nothing for what is already gone.
 pub fn uninstall() -> Result<(), BoxError> {
     // Stop redirecting first, so nothing reaches the service as it goes.
-    std::fs::write(hosts_file(), without_block(&std::fs::read_to_string(hosts_file())?))?;
+    write_hosts(&[])?;
     stop_service(true)?;
     for (name, value) in environment() {
         if registry_get(ENVIRONMENT_KEY, name)? == Some(value) {

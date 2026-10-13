@@ -5,8 +5,6 @@ use rama::tls::boring::core::x509::X509;
 use rcgen::SigningKey;
 use std::io;
 use tracing::warn;
-use windows_sys::Win32::Foundation::LocalFree;
-use windows_sys::Win32::Security::Authorization::*;
 use windows_sys::Win32::Security::Cryptography::*;
 use windows_sys::Win32::Security::*;
 
@@ -72,21 +70,9 @@ impl Drop for RootStore {
 pub(super) fn data_dir_ready() -> io::Result<PathBuf> {
     let dir = data_dir();
     std::fs::create_dir_all(&dir)?;
-    let mut acl = ptr::null_mut();
-    let sddl = wide(DATA_DIR_ACL);
-    let parsed = unsafe {
-        ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut acl, ptr::null_mut())
-    };
-    if parsed == 0 {
-        return Err(io::Error::last_os_error());
-    }
     let info = DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION;
-    let set = unsafe { SetFileSecurityW(wide(&dir.display().to_string()).as_ptr(), info, acl) };
-    let error = io::Error::last_os_error();
-    unsafe { LocalFree(acl) };
-    if set == 0 {
-        return Err(error);
-    }
+    let path = wide(&dir.display().to_string());
+    with_descriptor(DATA_DIR_ACL, |acl| unsafe { SetFileSecurityW(path.as_ptr(), info, acl) })?;
     Ok(dir)
 }
 

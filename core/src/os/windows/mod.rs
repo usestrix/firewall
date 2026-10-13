@@ -18,7 +18,10 @@ use std::path::PathBuf;
 use std::ptr;
 use windows_registry::LOCAL_MACHINE;
 use windows_result::HRESULT;
-use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, LPARAM};
+use windows_sys::core::BOOL;
+use windows_sys::Win32::Foundation::{LocalFree, ERROR_FILE_NOT_FOUND, LPARAM};
+use windows_sys::Win32::Security::Authorization::*;
+use windows_sys::Win32::Security::PSECURITY_DESCRIPTOR;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     SendMessageTimeoutW, HWND_BROADCAST, SMTO_ABORTIFHUNG, WM_SETTINGCHANGE,
 };
@@ -61,11 +64,45 @@ fn redirects(hosts: &[&'static str]) -> Vec<(Ipv4Addr, &'static str)> {
     (3..).zip(hosts).map(|(i, host)| (Ipv4Addr::new(127, 0, 0, i), *host)).collect()
 }
 
+/// Points each host at its listener, or with none removes our block.
+fn write_hosts(hosts: &[&'static str]) -> std::io::Result<()> {
+    let mut contents = without_block(&std::fs::read_to_string(hosts_file())?);
+    if !hosts.is_empty() {
+        if !contents.is_empty() && !contents.ends_with('\n') {
+            contents.push_str("\r\n");
+        }
+        contents += &format!("{BEGIN}\r\n");
+        for (address, host) in redirects(hosts) {
+            contents += &format!("{address} {host}\r\n");
+        }
+        contents += &format!("{END}\r\n");
+    }
+    std::fs::write(hosts_file(), contents)
+}
+
 /// `contents` without our block.
 fn without_block(contents: &str) -> String {
     let Some((before, rest)) = contents.split_once(BEGIN) else { return contents.into() };
     let Some((_, after)) = rest.split_once(END) else { return contents.into() };
     before.to_owned() + after.strip_prefix("\r\n").unwrap_or(after)
+}
+
+/// Parses `sddl` for `apply`, which returns zero on failure.
+fn with_descriptor(sddl: &str, apply: impl FnOnce(PSECURITY_DESCRIPTOR) -> BOOL) -> std::io::Result<()> {
+    let (mut descriptor, sddl) = (ptr::null_mut(), wide(sddl));
+    let parsed = unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut descriptor, ptr::null_mut())
+    };
+    if parsed == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let applied = apply(descriptor);
+    let error = std::io::Error::last_os_error();
+    unsafe { LocalFree(descriptor) };
+    match applied {
+        0 => Err(error),
+        _ => Ok(()),
+    }
 }
 
 fn wide(s: &str) -> Vec<u16> {
