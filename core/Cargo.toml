@@ -75,6 +75,9 @@ rama = { version = "0.4.0", features = ["net-apple-networkextension"] }
 security-framework = "3.7.0"
 security-framework-sys = "2.17.0"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
 
