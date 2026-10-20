@@ -6,17 +6,13 @@ use rama::tls::boring::core::sha::sha256;
 use rcgen::{Error, PublicKeyData, SignatureAlgorithm, SigningKey, PKCS_ECDSA_P256_SHA256};
 use std::io;
 use std::ptr;
-use tracing::warn;
-use windows_sys::core::{HRESULT, PCWSTR};
+use windows_sys::core::HRESULT;
 use windows_sys::Win32::Foundation::NTE_BAD_KEYSET;
 use windows_sys::Win32::Security::Cryptography::*;
 
 const KEY_NAME: &str = "Strix Firewall CA";
-/// The TPM, then software for machines without one.
-const PROVIDERS: [PCWSTR; 2] = [MS_PLATFORM_CRYPTO_PROVIDER, MS_KEY_STORAGE_PROVIDER];
 
-/// The private key never leaves the TPM, or, without one, a non-exportable machine key,
-/// which an admin can still extract.
+/// The private key never leaves the TPM.
 #[derive(Default)]
 pub struct CaKey {
     key: usize,
@@ -30,23 +26,19 @@ unsafe impl Send for CaKey {}
 unsafe impl Sync for CaKey {}
 
 impl CaKey {
-    /// A machine key, so the service and an elevated installer share it. Software is checked first:
-    /// one exists only if the TPM failed at creation, and switching to the TPM later would mint a new CA.
+    /// A machine key, so the service and an elevated installer share it.
     pub fn load_or_create() -> Result<Self, BoxError> {
         let flags = NCRYPT_MACHINE_KEY_FLAG;
-        if let Some(key) = PROVIDERS.into_iter().rev().find_map(|p| open_tpm_key(p, KEY_NAME, flags).transpose()) {
-            return Ok(key?);
-        }
-        let key = create_tpm_key(false, KEY_NAME, flags).or_else(|error| {
-            warn!(%error, "no TPM key, falling back to a software key");
-            create_tpm_key(true, KEY_NAME, flags)
-        });
-        Ok(key?)
+        let key = match open_tpm_key(KEY_NAME, flags)? {
+            Some(key) => key,
+            None => create_tpm_key(KEY_NAME, flags)?,
+        };
+        Ok(key)
     }
 
     /// A per-user key under a random name, which needs no elevation; `delete_from_tpm` it after.
-    pub fn create_test_key(software: bool) -> io::Result<Self> {
-        create_tpm_key(software, &format!("Strix Firewall test {:016x}", rand::random::<u64>()), 0)
+    pub fn create_test_key() -> io::Result<Self> {
+        create_tpm_key(&format!("Strix Firewall test {:016x}", rand::random::<u64>()), 0)
     }
 
     /// Deletes the key itself, not just this handle to it.
@@ -91,12 +83,10 @@ impl SigningKey for CaKey {
     }
 }
 
-/// `None` if the provider is absent or holds no such key.
-fn open_tpm_key(provider: PCWSTR, name: &str, flags: u32) -> io::Result<Option<CaKey>> {
+/// `None` if the TPM holds no such key.
+fn open_tpm_key(name: &str, flags: u32) -> io::Result<Option<CaKey>> {
     let mut key = CaKey::default();
-    if check(unsafe { NCryptOpenStorageProvider(&mut key.provider, provider, 0) }).is_err() {
-        return Ok(None);
-    }
+    check(unsafe { NCryptOpenStorageProvider(&mut key.provider, MS_PLATFORM_CRYPTO_PROVIDER, 0) })?;
     let name = wide(name);
     match unsafe { NCryptOpenKey(key.provider, &mut key.key, name.as_ptr(), 0, flags | NCRYPT_SILENT_FLAG) } {
         NTE_BAD_KEYSET => Ok(None),
@@ -108,18 +98,11 @@ fn open_tpm_key(provider: PCWSTR, name: &str, flags: u32) -> io::Result<Option<C
     }
 }
 
-fn create_tpm_key(software: bool, name: &str, flags: u32) -> io::Result<CaKey> {
+fn create_tpm_key(name: &str, flags: u32) -> io::Result<CaKey> {
     let mut key = CaKey::default();
-    check(unsafe { NCryptOpenStorageProvider(&mut key.provider, PROVIDERS[software as usize], 0) })?;
+    check(unsafe { NCryptOpenStorageProvider(&mut key.provider, MS_PLATFORM_CRYPTO_PROVIDER, 0) })?;
     let (algorithm, name) = (NCRYPT_ECDSA_P256_ALGORITHM, wide(name));
     check(unsafe { NCryptCreatePersistedKey(key.provider, &mut key.key, algorithm, name.as_ptr(), 0, flags) })?;
-    // TPM keys cannot be exported at all; a software key must be told not to allow it.
-    if software {
-        let policy = 0u32.to_ne_bytes();
-        check(unsafe {
-            NCryptSetProperty(key.key, NCRYPT_EXPORT_POLICY_PROPERTY, policy.as_ptr(), 4, NCRYPT_PERSIST_FLAG)
-        })?;
-    }
     check(unsafe { NCryptFinalizeKey(key.key, NCRYPT_SILENT_FLAG) })?;
     key.public = public_point(key.key)?;
     Ok(key)
