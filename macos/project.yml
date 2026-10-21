@@ -87,25 +87,25 @@ targets:
               $([ "$CONFIGURATION" = Debug ] || echo --release)
           done
 
-  Installer:
+  Firewall:
     type: application
     platform: macOS
     sources:
-      - Installer
+      - App
       - path: ../assets/logo-transparent.png
         buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.usestrix.firewall
     info:
-      path: Installer/Info.plist
+      path: App/Info.plist
       properties:
         CFBundleShortVersionString: "0.1"
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
         LSUIElement: true
     entitlements:
-      path: Installer/Installer.entitlements
+      path: App/App.entitlements
       properties:
         com.apple.application-identifier: ${TEAM}.com.usestrix.firewall
         com.apple.developer.team-identifier: ${TEAM}
@@ -127,4 +127,6 @@ targets:
           export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           cd "$SRCROOT/../core"
           cargo build --bin firewall --target aarch64-apple-darwin $([ "$CONFIGURATION" = Debug ] || echo --release)
-          cp "target/aarch64-apple-darwin/$CARGO_PROFILE/firewall" "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/"
+          # Not Contents/MacOS: on a case-insensitive disk it would overwrite the app's own Firewall executable.
+          mkdir -p "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
+          cp "target/aarch64-apple-darwin/$CARGO_PROFILE/firewall" "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/"

@@ -51,7 +51,7 @@ impl TransparentProxyHandler for Handler {
         TransparentProxyConfig::new().with_rules(vec![tcp_rule(80), tcp_rule(443)])
     }
 
-    /// Setup requests from the installer. Never empty: Swift cannot tell that from no reply.
+    /// Setup requests from the app. Never empty: Swift cannot tell that from no reply.
     async fn handle_app_message(&self, _exec: Executor, message: Bytes) -> Option<Bytes> {
         let message = String::from_utf8_lossy(&message).into_owned();
         Some(Bytes::from(match message.as_str() {

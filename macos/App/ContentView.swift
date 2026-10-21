@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject var model: InstallerModel
+    @ObservedObject var model: FirewallModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

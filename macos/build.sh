@@ -23,7 +23,7 @@ IDENTITY=${IDENTITY:-Developer ID Application}
 INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
-APP=build/Build/Products/$CONFIGURATION/Installer.app
+APP=build/Build/Products/$CONFIGURATION/Firewall.app
 EXT=$APP/Contents/Library/SystemExtensions/$EXT_ID.systemextension
 PKG_ROOT=build/pkg-root
 
@@ -38,7 +38,7 @@ main() {
 build() {
   echo "==> Building"
   xcodegen generate >/dev/null
-  xcodebuild -project Firewall.xcodeproj -scheme Installer -configuration $CONFIGURATION \
+  xcodebuild -project Firewall.xcodeproj -scheme Firewall -configuration $CONFIGURATION \
     -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" build >/dev/null
 }
@@ -47,11 +47,11 @@ sign() {
   echo "==> Signing with $IDENTITY"
   cp "$(profile_for $APP_ID)" "$APP/Contents/embedded.provisionprofile"
   cp "$(profile_for $EXT_ID)" "$EXT/Contents/embedded.provisionprofile"
-  codesign --force --options runtime --timestamp -s "$IDENTITY" "$APP/Contents/MacOS/firewall"
+  codesign --force --options runtime --timestamp -s "$IDENTITY" "$APP/Contents/Helpers/firewall"
   codesign --force --options runtime --timestamp \
     --entitlements Extension/Extension.entitlements -s "$IDENTITY" "$EXT"
   codesign --force --options runtime --timestamp \
-    --entitlements Installer/Installer.entitlements -s "$IDENTITY" "$APP"
+    --entitlements App/App.entitlements -s "$IDENTITY" "$APP"
   codesign --verify --deep --strict "$APP"
 }
 

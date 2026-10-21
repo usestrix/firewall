@@ -23,7 +23,7 @@ enum StepStatus: Equatable {
     }
 }
 
-enum InstallerError: Error, LocalizedError {
+enum FirewallError: Error, LocalizedError {
     case extensionUnavailable
     case screeningDidNotStart(NEVPNStatus)
 
@@ -36,7 +36,7 @@ enum InstallerError: Error, LocalizedError {
 }
 
 @MainActor
-final class InstallerModel: NSObject, ObservableObject {
+final class FirewallModel: NSObject, ObservableObject {
     @Published private(set) var extensionStep = StepStatus.pending
     @Published private(set) var screeningStep = StepStatus.pending
     @Published private(set) var trustStep = StepStatus.pending
@@ -165,7 +165,7 @@ final class InstallerModel: NSObject, ObservableObject {
         }
     }
 
-    private func stage(_ step: ReferenceWritableKeyPath<InstallerModel, StepStatus>,
+    private func stage(_ step: ReferenceWritableKeyPath<FirewallModel, StepStatus>,
                        running: String,
                        work: @MainActor () async throws -> String) async -> Bool {
         self[keyPath: step] = .running(running)
@@ -245,7 +245,7 @@ final class InstallerModel: NSObject, ObservableObject {
 
     /// The extension wrote these as root, so the bundled CLI removes them behind an admin prompt; returns what to report if it failed.
     private func removeStoredCA() -> String? {
-        let cli = Bundle.main.path(forAuxiliaryExecutable: "firewall") ?? ""
+        let cli = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/firewall").path
         let script = "do shell script quoted form of \"\(cli)\" & \" uninstall\" with administrator privileges"
         var error: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&error)
@@ -296,14 +296,14 @@ final class InstallerModel: NSObject, ObservableObject {
 
         try manager.connection.startVPNTunnel()
         guard try await wait(for: .connected, on: manager.connection) else {
-            throw InstallerError.screeningDidNotStart(manager.connection.status)
+            throw FirewallError.screeningDidNotStart(manager.connection.status)
         }
         return "Screening package downloads"
     }
 
     private func restartScreening() async throws -> String {
         guard let manager = try await loadManager() else {
-            throw InstallerError.extensionUnavailable
+            throw FirewallError.extensionUnavailable
         }
         manager.connection.stopVPNTunnel()
         _ = try await wait(for: .disconnected, on: manager.connection)
@@ -311,7 +311,7 @@ final class InstallerModel: NSObject, ObservableObject {
     }
 
     private func stopScreening() async throws -> String {
-        guard let manager = try await loadManager() else { throw InstallerError.extensionUnavailable }
+        guard let manager = try await loadManager() else { throw FirewallError.extensionUnavailable }
         manager.isEnabled = false
         try await manager.saveToPreferences()
         manager.connection.stopVPNTunnel()
@@ -357,13 +357,13 @@ final class InstallerModel: NSObject, ObservableObject {
 
     private func providerMessage(_ message: String) async throws -> String {
         guard let session = watched?.connection as? NETunnelProviderSession else {
-            throw InstallerError.extensionUnavailable
+            throw FirewallError.extensionUnavailable
         }
         return try await withCheckedThrowingContinuation { continuation in
             do {
                 try session.sendProviderMessage(Data(message.utf8)) { response in
                     guard let response, let reply = String(data: response, encoding: .utf8) else {
-                        continuation.resume(throwing: InstallerError.extensionUnavailable)
+                        continuation.resume(throwing: FirewallError.extensionUnavailable)
                         return
                     }
                     continuation.resume(returning: reply)
@@ -380,7 +380,7 @@ final class InstallerModel: NSObject, ObservableObject {
     }
 }
 
-extension InstallerModel: OSSystemExtensionRequestDelegate {
+extension FirewallModel: OSSystemExtensionRequestDelegate {
     nonisolated func request(_ request: OSSystemExtensionRequest,
                              actionForReplacingExtension existing: OSSystemExtensionProperties,
                              withExtension replacement: OSSystemExtensionProperties) -> OSSystemExtensionRequest.ReplacementAction {
