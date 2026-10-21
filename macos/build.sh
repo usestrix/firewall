@@ -3,7 +3,8 @@
 # The package is notarized with the notarytool keychain profile in NOTARY_PROFILE; `build.sh debug`
 # makes a Debug build and skips notarization.
 #
-# Xcode builds the bundles unsigned; they are signed here with Developer ID.
+# Xcode builds the bundles unsigned; they are signed here. Debug builds use Apple Development signing
+# because macOS refuses to activate a Developer ID extension that is not notarized.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -11,15 +12,23 @@ cd "$(dirname "$0")"
 : "${TEAM:?set TEAM in macos/.env}"
 export TEAM
 
-CONFIGURATION=Release
-if [ "${1:-}" = debug ]; then CONFIGURATION=Debug; fi
-[ $CONFIGURATION = Debug ] || : "${NOTARY_PROFILE:?set NOTARY_PROFILE in macos/.env}"
+# Identities are matched as a substring of the certificate name; set them if more than one matches.
+# Development profiles grant only the plain NetworkExtension values, Developer ID ones only -systemextension.
+if [ "${1:-}" = debug ]; then
+  CONFIGURATION=Debug
+  IDENTITY=${DEBUG_IDENTITY:-Apple Development}
+  NE_PROVIDER=app-proxy-provider
+else
+  CONFIGURATION=Release
+  IDENTITY=${IDENTITY:-Developer ID Application}
+  NE_PROVIDER=app-proxy-provider-systemextension
+  : "${NOTARY_PROFILE:?set NOTARY_PROFILE in macos/.env}"
+fi
+export NE_PROVIDER
 
 APP_ID=com.usestrix.firewall
 EXT_ID=com.usestrix.firewall.extension
 VERSION=0.1
-# Matched as a substring of the certificate name; set these if more than one certificate matches.
-IDENTITY=${IDENTITY:-Developer ID Application}
 INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
@@ -82,12 +91,15 @@ notarize() {
   xcrun stapler staple build/Firewall.pkg
 }
 
-# Prints the newest provisioning profile Xcode has downloaded for a bundle id.
+# Prints the newest provisioning profile Xcode has downloaded for a bundle id that grants NE_PROVIDER.
 profile_for() {
-  local want=$TEAM.$1 newest= newest_time=0 id t
+  local want=$TEAM.$1 newest= newest_time=0 profile id t
   for p in "$PROFILES"/*.provisionprofile; do
-    id=$(security cms -D -i "$p" | plutil -extract Entitlements.com\\.apple\\.application-identifier raw -o - -)
+    profile=$(security cms -D -i "$p")
+    id=$(plutil -extract Entitlements.com\\.apple\\.application-identifier raw -o - - <<<"$profile")
     [ "$id" = "$want" ] || continue
+    plutil -extract Entitlements.com\\.apple\\.developer\\.networking\\.networkextension json -o - - <<<"$profile" |
+      grep -q "\"$NE_PROVIDER\"" || continue
     t=$(stat -f %m "$p")
     if [ "$t" -gt "$newest_time" ]; then newest=$p; newest_time=$t; fi
   done
