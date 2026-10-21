@@ -117,7 +117,7 @@ final class FirewallModel: NSObject, ObservableObject {
         offerRestart()
     }
 
-    /// Apps opened before setup, terminals included, only get NODE_EXTRA_CA_CERTS once reopened.
+    /// Apps opened before setup, terminals included, only get the environment the env agent sets once reopened.
     private func offerRestart() {
         let alert = NSAlert()
         alert.messageText = "Restart to finish setting up"
