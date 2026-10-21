@@ -10,11 +10,9 @@ struct ContentView: View {
             Divider()
             steps
             Divider()
-            transcript
-            Divider()
             footer
         }
-        .frame(width: 540, height: 560)
+        .frame(width: 540)
         .task { await model.refresh() }
         .onAppear(perform: recenterIfOffscreen)
         .onChange(of: model.completed) { done in
@@ -38,9 +36,11 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            Image(systemName: "shield.lefthalf.filled")
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(.tint)
+            Image(nsImage: NSImage(named: "logo-transparent")!)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(height: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Firewall").font(.title2.weight(.semibold))
                 Text("Screens package downloads before they reach your machine.")
@@ -70,27 +70,6 @@ struct ContentView: View {
         .padding(20)
     }
 
-    private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(model.transcript.indices, id: \.self) { line in
-                        Text(model.transcript[line])
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(line)
-                    }
-                }
-                .padding(12)
-            }
-            .onChange(of: model.transcript.count) { count in
-                proxy.scrollTo(count - 1)
-            }
-        }
-        .frame(maxHeight: .infinity)
-    }
-
     private var footer: some View {
         HStack {
             if model.busy { ProgressView().controlSize(.small) }
@@ -105,8 +84,11 @@ struct ContentView: View {
                     .font(.callout)
             }
             Spacer()
+            if model.awaitingApproval {
+                Button("Open System Settings") { model.openApprovalSettings() }
+            }
             Button("Uninstall") { Task { await model.uninstall() } }
-                .disabled(model.busy)
+                .disabled(model.busy && !model.awaitingApproval)
             Button("Install") { Task { await model.install() } }
                 .keyboardShortcut(.defaultAction)
                 .disabled(model.busy || model.completed)
@@ -129,9 +111,10 @@ private struct StepRow: View {
                 Text(title).font(.body.weight(.medium))
                 Text(note).font(.caption).foregroundStyle(.secondary)
                 Text(status.detail)
-                    .font(.caption)
+                    .font(font)
                     .foregroundStyle(tint)
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
@@ -146,7 +129,7 @@ private struct StepRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 20)
                 .overlay(Circle().strokeBorder(.secondary.opacity(0.4)))
-        case .running:
+        case .running, .needsAction:
             ProgressView().controlSize(.small)
         case .done:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
@@ -155,9 +138,15 @@ private struct StepRow: View {
         }
     }
 
+    private var font: Font {
+        if case .needsAction = status { return .system(size: 14) }
+        return .caption
+    }
+
     private var tint: Color {
         switch status {
         case .pending, .running: return .secondary
+        case .needsAction: return .orange
         case .done: return .green
         case .failed: return .orange
         }

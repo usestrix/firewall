@@ -7,13 +7,15 @@ import SystemExtensions
 enum StepStatus: Equatable {
     case pending
     case running(String)
+    /// Waiting on the user to do something outside the app.
+    case needsAction(String)
     case done(String)
     case failed(String)
 
     var detail: String {
         switch self {
         case .pending: return "Not started"
-        case let .running(text), let .done(text), let .failed(text): return text
+        case let .running(text), let .needsAction(text), let .done(text), let .failed(text): return text
         }
     }
 
@@ -43,14 +45,15 @@ final class FirewallModel: NSObject, ObservableObject {
     @Published private(set) var extensionStep = StepStatus.pending
     @Published private(set) var screeningStep = StepStatus.pending
     @Published private(set) var trustStep = StepStatus.pending
-    @Published private(set) var busy = false
+    @Published private var operations = 0
+    var busy: Bool { operations > 0 }
+    @Published private(set) var awaitingApproval = false
     @Published private(set) var completed = false
     @Published private(set) var removed = false
-    @Published private(set) var transcript: [String] = []
     @Published private(set) var screening = false
 
     private let logger = Logger(subsystem: FirewallIDs.appBundleID, category: "installer")
-    private var pendingRequest: CheckedContinuation<Void, Error>?
+    private var pendingRequest: (request: OSSystemExtensionRequest, continuation: CheckedContinuation<Void, Error>)?
     private var statusObserver: NSObjectProtocol?
     // NE only posts status notifications for connections that are still referenced.
     @Published private var watched: NETransparentProxyManager?
@@ -88,8 +91,8 @@ final class FirewallModel: NSObject, ObservableObject {
     }
 
     func install() async {
-        busy = true
-        defer { busy = false }
+        operations += 1
+        defer { operations -= 1 }
         removed = false
 
         guard CompetingExtensions.confirmInstall() else {
@@ -115,10 +118,14 @@ final class FirewallModel: NSObject, ObservableObject {
 
     /// After the admin gate, every stage runs even if an earlier one fails, so a partial uninstall never strands the rest.
     func uninstall() async {
-        busy = true
-        defer { busy = false }
+        operations += 1
+        defer { operations -= 1 }
         completed = false
         removed = false
+        // Stop waiting on an activation the user never approved; the deactivation below withdraws it.
+        if let pending = pendingRequest {
+            finishRequest(pending.request, .failure(CocoaError(.userCancelled)))
+        }
 
         // Install needs admin, so uninstall does too: untrusting the CA prompts for it, and a cancel stops here.
         guard await untrustAuthorities() else {
@@ -151,21 +158,29 @@ final class FirewallModel: NSObject, ObservableObject {
 
     /// Restarting the tunnel rebuilds the provider, which is what makes it re-read the config.
     func restart() async {
-        busy = true
-        defer { busy = false }
+        operations += 1
+        defer { operations -= 1 }
         guard await stage(\.screeningStep, running: "Restarting screening", work: restartScreening) else { return }
         // A restart can mint a new CA when the screened hosts change.
         _ = await stage(\.trustStep, running: "Waiting for the extension's CA", work: trustCertificateAuthority)
     }
 
     func setEnabled(_ enabled: Bool) async {
-        busy = true
-        defer { busy = false }
+        operations += 1
+        defer { operations -= 1 }
         if enabled {
             _ = await stage(\.screeningStep, running: "Starting screening", work: startScreening)
         } else {
             _ = await stage(\.screeningStep, running: "Stopping screening", work: stopScreening)
         }
+    }
+
+    func openApprovalSettings() {
+        var pane = "x-apple.systempreferences:com.apple.preference.security"
+        if #available(macOS 15, *) {
+            pane = "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.system_extension.network_extension"
+        }
+        if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
     }
 
     private func stage(_ step: ReferenceWritableKeyPath<FirewallModel, StepStatus>,
@@ -268,14 +283,18 @@ final class FirewallModel: NSObject, ObservableObject {
     private func submit(_ request: OSSystemExtensionRequest) async throws {
         request.delegate = self
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            pendingRequest = continuation
+            pendingRequest = (request, continuation)
             OSSystemExtensionManager.shared.submitRequest(request)
         }
     }
 
-    private func finishRequest(_ result: Result<Void, Error>) {
-        pendingRequest?.resume(with: result)
+    /// Callbacks for an abandoned request can still arrive, so only the pending one is finished.
+    private func finishRequest(_ request: OSSystemExtensionRequest, _ result: Result<Void, Error>) {
+        guard let pending = pendingRequest, pending.request === request else { return }
         pendingRequest = nil
+        awaitingApproval = false
+        NSApp.activate(ignoringOtherApps: true)
+        pending.continuation.resume(with: result)
     }
 
     // MARK: - Network extension
@@ -391,7 +410,6 @@ final class FirewallModel: NSObject, ObservableObject {
     }
 
     private func log(_ line: String) {
-        transcript.append("\(Date().formatted(date: .omitted, time: .standard))  \(line)")
         logger.info("\(line, privacy: .public)")
     }
 }
@@ -405,12 +423,14 @@ extension FirewallModel: OSSystemExtensionRequestDelegate {
 
     nonisolated func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
         Task { @MainActor in
-            extensionStep = .running("Approve Firewall in System Settings › General › Login Items & Extensions")
-            log("Waiting for user approval")
-            // Only MDM can pre-approve a system extension, so take them to the switch.
-            if let pane = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.system_extension.network_extension") {
-                NSWorkspace.shared.open(pane)
+            // macOS shows its own alert that opens System Settings; this says what to do there.
+            var instruction = "In System Settings › Privacy & Security, click Allow for StrixFirewall"
+            if #available(macOS 15, *) {
+                instruction = "In System Settings › General › Login Items & Extensions, click Network Extensions and turn on StrixFirewall"
             }
+            extensionStep = .needsAction(instruction)
+            awaitingApproval = true
+            log("Waiting for user approval")
         }
     }
 
@@ -420,12 +440,12 @@ extension FirewallModel: OSSystemExtensionRequestDelegate {
             if result == .willCompleteAfterReboot {
                 log("Extension will finish installing after a reboot")
             }
-            finishRequest(.success(()))
+            finishRequest(request, .success(()))
         }
     }
 
     nonisolated func request(_ request: OSSystemExtensionRequest, didFailWithError error: Error) {
-        Task { @MainActor in finishRequest(.failure(error)) }
+        Task { @MainActor in finishRequest(request, .failure(error)) }
     }
 }
 
