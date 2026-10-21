@@ -26,11 +26,14 @@ enum StepStatus: Equatable {
 enum FirewallError: Error, LocalizedError {
     case extensionUnavailable
     case screeningDidNotStart(NEVPNStatus)
+    case extensionStopped(String)
 
     var errorDescription: String? {
         switch self {
         case .extensionUnavailable: return "The extension is not running"
         case let .screeningDidNotStart(status): return "Screening did not start (\(status.label))"
+        case let .extensionStopped(reason):
+            return "The extension stopped: \(reason). Its log: log show --last 5m --predicate 'subsystem BEGINSWITH \"\(FirewallIDs.appBundleID)\"'"
         }
     }
 }
@@ -294,8 +297,14 @@ final class FirewallModel: NSObject, ObservableObject {
         try await manager.loadFromPreferences()
         watched = manager
 
+        screeningStep = .running("Starting the extension")
         try manager.connection.startVPNTunnel()
         guard try await wait(for: .connected, on: manager.connection) else {
+            do {
+                try await manager.connection.fetchLastDisconnectError()
+            } catch {
+                throw FirewallError.extensionStopped(error.localizedDescription)
+            }
             throw FirewallError.screeningDidNotStart(manager.connection.status)
         }
         return "Screening package downloads"
@@ -319,9 +328,13 @@ final class FirewallModel: NSObject, ObservableObject {
         return "Screening disabled"
     }
 
+    /// Gives up early once a start has failed, which shows as connecting then disconnected.
     private func wait(for status: NEVPNStatus, on connection: NEVPNConnection) async throws -> Bool {
+        var connecting = false
         for _ in 0 ..< 60 {
             if connection.status == status { return true }
+            if connection.status == .connecting { connecting = true }
+            if connecting && connection.status == .disconnected { return false }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
         return false
