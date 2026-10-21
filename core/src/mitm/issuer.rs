@@ -1,17 +1,15 @@
-use super::ca::{params, CaSigner};
+use super::ca::CaSigner;
 use rama::error::BoxError;
 use rama::tls::boring::core::pkey::PKey;
 use rama::tls::boring::core::x509::X509;
 use rama::tls::boring::proxy::cert_issuer::{BoringMitmCertIssuer, MitmIssuedCert};
 use rama::utils::collections::non_empty_vec;
 use rcgen::{CertificateParams, CrlDistributionPoint, DistinguishedName, DnType, Issuer, KeyPair};
-use std::sync::Arc;
 
 /// Leaves name only screened hosts; any other name falls outside the CA's constraint.
 #[derive(Clone)]
 pub struct ConstrainedCertIssuer {
     ca_crt: X509,
-    ca_params: Arc<CertificateParams>,
     signer: CaSigner,
     hosts: Vec<&'static str>,
     crl: Option<String>,
@@ -24,8 +22,7 @@ impl ConstrainedCertIssuer {
         hosts: Vec<&'static str>,
         crl: Option<String>,
     ) -> Self {
-        let ca_params = Arc::new(params(&hosts));
-        Self { ca_crt, ca_params, signer, hosts, crl }
+        Self { ca_crt, signer, hosts, crl }
     }
 }
 
@@ -54,7 +51,8 @@ impl BoringMitmCertIssuer for ConstrainedCertIssuer {
 
         // The TLS server needs the leaf key in memory, so it can't be the platform key.
         let leaf_key = KeyPair::generate()?;
-        let issuer = Issuer::from_params(&self.ca_params, &*self.signer);
+        let ca_der = self.ca_crt.to_der()?;
+        let issuer = Issuer::from_ca_cert_der(&ca_der.into(), &*self.signer)?;
         let crt = X509::from_der(leaf.signed_by(&leaf_key, &issuer)?.der())?;
         let key = PKey::private_key_from_pem(leaf_key.serialize_pem().as_bytes())?;
 

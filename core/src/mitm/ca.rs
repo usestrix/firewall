@@ -39,7 +39,8 @@ impl CertificateAuthority {
         (held == signer.subject_public_key_info()).then_some(ca)
     }
 
-    fn new(pem: String) -> Result<Self, BoxError> {
+    /// The first certificate is the CA; any after it are its chain, for clients that read no keychain.
+    pub fn new(pem: String) -> Result<Self, BoxError> {
         Ok(Self { crt: X509::from_pem(pem.as_bytes())?, pem })
     }
 }
@@ -61,9 +62,10 @@ pub fn crl(hosts: &[&str], signer: &dyn SigningKey) -> Result<Vec<u8>, BoxError>
 }
 
 pub const COMMON_NAME: &str = "Strix Firewall";
+/// Of a CA an MDM enrolls instead, which must not match `COMMON_NAME`: uninstall deletes those.
+pub const MANAGED_COMMON_NAME: &str = "Strix Firewall Managed";
 
-/// Also used by the issuer, whose issuer name must match the CA's subject.
-pub fn params(hosts: &[&str]) -> CertificateParams {
+fn params(hosts: &[&str]) -> CertificateParams {
     let mut name = DistinguishedName::new();
     name.push(DnType::CommonName, COMMON_NAME);
     name.push(DnType::OrganizationName, "Strix");

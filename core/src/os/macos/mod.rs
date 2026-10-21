@@ -32,6 +32,7 @@ const KEYCHAIN_SERVICE: &str = BUNDLE_ID;
 const KEYCHAIN_ACCOUNT: &str = "ca";
 /// Must match `macos/LaunchAgents/com.usestrix.firewall.env.plist`, which points npm at it.
 const CA_FILE: &str = "/Library/Application Support/Firewall/ca.pem";
+const SYSTEM_KEYCHAIN: &str = "/Library/Keychains/System.keychain";
 
 #[derive(Clone)]
 struct Handler {
@@ -102,10 +103,18 @@ fn handler(exec: Executor) -> Result<Handler, BoxError> {
     let config = FirewallConfig::load().inspect_err(|_| telemetry::error("config"))?;
     let firewall = Arc::new(Firewall::new(config));
     let hosts = firewall.hosts();
-    let key = enclave::EnclaveKey::load_or_create().inspect_err(|_| telemetry::error("enclave"))?;
+    let managed = install::managed_certificate_authority().inspect_err(|_| telemetry::error("ca"))?;
+    let (key, ca) = match managed {
+        Some(managed) => managed,
+        None => {
+            let key = enclave::EnclaveKey::load_or_create()
+                .inspect_err(|_| telemetry::error("enclave"))?;
+            let ca = install::certificate_authority(&hosts, &key);
+            (key, ca.inspect_err(|_| telemetry::error("ca"))?)
+        }
+    };
     let signer: mitm::CaSigner = Arc::new(key);
-    let ca = install::certificate_authority(&hosts, &*signer);
-    let ca = Arc::new(ca.inspect_err(|_| telemetry::error("ca"))?);
+    let ca = Arc::new(ca);
     let service = mitm::mitm_service(firewall, &ca, signer, None, exec);
     Ok(Handler { ca, hosts, service })
 }

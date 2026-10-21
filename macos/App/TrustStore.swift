@@ -34,7 +34,11 @@ enum TrustStore {
         return certificate
     }
 
+    /// The extension only uses a managed CA after checking that it chains to a root the MDM trusts.
     static func isTrusted(_ certificate: SecCertificate) -> Bool {
+        var name: CFString?
+        if SecCertificateCopyCommonName(certificate, &name) == errSecSuccess,
+           name as String? == FirewallIDs.managedCaCommonName { return true }
         var settings: CFArray?
         return SecTrustSettingsCopyTrustSettings(certificate, .admin, &settings) == errSecSuccess
     }
