@@ -1,6 +1,6 @@
 use crate::http::{blocked, reply, text};
 use crate::policies::{self, Check, Decision};
-use crate::{Firewall, FirewallConfig};
+use crate::{telemetry, Firewall, FirewallConfig};
 use rama::http::body::util::BodyExt;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::header::CONTENT_TYPE;
@@ -19,6 +19,7 @@ pub fn serve(config: FirewallConfig) -> std::io::Result<()> {
     bound.set_nonblocking(true)?;
     crate::runtime()?.block_on(async move {
         let firewall = Arc::new(Firewall::new(config));
+        telemetry::heartbeat();
         let exec = Executor::default();
         let listener = TcpListener::try_from_std_tcp_listener(bound, exec.clone())?;
         let server = HttpServer::auto(exec).service(service_fn(move |req: Request| {
@@ -44,6 +45,7 @@ async fn screen(target: String, firewall: &Firewall) -> Response {
         }
         Decision::Block { eco, pkg, filter, reason } => {
             let reason = format!("{} {reason}", pkg.label());
+            telemetry::screened_package(eco, &pkg, Some(&reason));
             warn!(%eco, %filter, "blocked by firewall: {reason}");
             blocked(&reason)
         }
@@ -51,9 +53,11 @@ async fn screen(target: String, firewall: &Firewall) -> Response {
             match &check {
                 Check::NoPackage => {}
                 Check::Allowed(pkg) => {
+                    telemetry::screened_package(target.eco, pkg, None);
                     info!(eco = %target.eco, pkg = %pkg.label(), "cleared by every filter")
                 }
                 Check::Unverified { pkg, filter, error } => {
+                    telemetry::screened_package(target.eco, pkg, None);
                     info!(pkg = %pkg.label(), %filter, %error, "filter could not check, allowing")
                 }
             }

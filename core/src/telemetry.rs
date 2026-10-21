@@ -1,10 +1,11 @@
+use crate::policies::Package;
 use crate::{Firewall, FirewallConfig};
 use rama::http::client::EasyHttpWebClient;
 use rama::http::header::CONTENT_TYPE;
 use rama::http::service::client::HttpClientExt;
 use rama::rt::blocking::Runtime;
 use serde_json::{json, Value};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::time::Duration;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -29,6 +30,9 @@ static TELEMETRY: LazyLock<Option<Telemetry>> = LazyLock::new(|| {
     })
 });
 
+/// How the firewall is running: "extension", "wrapper" or "proxy".
+static MODE: OnceLock<&'static str> = OnceLock::new();
+
 struct Telemetry {
     key: &'static str,
     session: String,
@@ -42,15 +46,22 @@ pub fn screened(firewall: &Firewall, url: &str, reason: Option<&str>) {
     let Some((registry, rest)) = firewall.match_on(url, |r| r.upstream) else {
         return;
     };
-    let Some(pkg) = firewall.resolve(registry, rest).pkg else {
-        return;
-    };
-    let mut properties = json!({ "eco": registry.eco, "blocked": reason.is_some() });
+    if let Some(pkg) = firewall.resolve(registry, rest).pkg {
+        screened_package(registry.eco, &pkg, reason);
+    }
+}
+
+pub fn screened_package(eco: &str, pkg: &Package, reason: Option<&str>) {
+    let mut properties = json!({ "eco": eco, "blocked": reason.is_some() });
     if let Some(reason) = reason {
         properties["package"] = pkg.label().into();
         properties["reason"] = reason.into();
     }
     record("package_screened", properties);
+}
+
+pub fn set_mode(mode: &'static str) {
+    MODE.set(mode).ok();
 }
 
 pub fn error(kind: &'static str) {
@@ -82,6 +93,7 @@ pub fn flush() {
 fn record(event: &str, mut properties: Value) {
     let Some(telemetry) = &*TELEMETRY else { return };
     properties["distinct_id"] = telemetry.session.clone().into();
+    properties["mode"] = MODE.get().copied().into();
     properties["os"] = std::env::consts::OS.into();
     properties["arch"] = std::env::consts::ARCH.into();
     properties["$process_person_profile"] = false.into();
