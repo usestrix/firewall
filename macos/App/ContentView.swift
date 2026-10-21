@@ -159,7 +159,7 @@ private struct StepRow: View {
     }
 
     private var font: Font {
-        if case .needsAction = status { return .title3 }
+        if case .needsAction = status { return .system(size: 14) }
         return .caption
     }
 
