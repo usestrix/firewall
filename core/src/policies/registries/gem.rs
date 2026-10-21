@@ -1,4 +1,4 @@
-use super::{Pattern, Registry};
+use super::{Pattern, Published, Registry};
 
 pub static GEM: Registry = Registry {
     prefix: "/gem/",
@@ -16,4 +16,9 @@ pub static GEM: Registry = Registry {
         // The compact index, which names no version.
         Pattern { re: r"^info/(?<name>[^/]+)$", rewrite: None },
     ],
+    published: Some(Published {
+        url: "https://rubygems.org/api/v2/rubygems/{name}/versions/{version}.json",
+        pointer: "/created_at",
+        escape: None,
+    }),
 };

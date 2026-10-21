@@ -48,6 +48,15 @@ pub struct Registry {
     /// PyPI escapes a name into a filename and Go escapes its capitals; advisories do neither.
     pub normalize: Option<fn(&str) -> String>,
     pub patterns: &'static [Pattern],
+    pub published: Option<Published>,
+}
+
+/// A URL to fetch and a JSON pointer to the timestamp in its reply.
+#[derive(Debug)]
+pub struct Published {
+    pub url: &'static str,
+    pub pointer: &'static str,
+    pub escape: Option<fn(&str) -> String>,
 }
 
 impl Registry {

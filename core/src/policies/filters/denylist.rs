@@ -1,4 +1,4 @@
-use super::{Filter, Verdict, VerdictFuture};
+use super::{Filter, Verdict, VerdictFuture, AGENT};
 use crate::config::DenylistSource;
 use crate::policies::registries::Registry;
 use crate::policies::Package;
@@ -13,9 +13,6 @@ use std::time::Duration;
 use tokio::sync::OnceCell;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
-
-/// The GitHub API turns away requests without a user agent.
-const AGENT: &str = "strix-firewall";
 
 #[derive(Debug, PartialEq)]
 pub enum AffectedVersions {

@@ -13,6 +13,8 @@ pub struct FirewallConfig {
     pub port: u16,
     /// Allow a package when a filter could not check it.
     pub fail_open: bool,
+    /// 0 turns the age check off.
+    pub min_age_hours: u64,
     pub denylist: DenylistSource,
     pub telemetry: bool,
     /// Not describable in the file yet, so this is always the built-in table.
@@ -43,6 +45,7 @@ impl Default for FirewallConfig {
         FirewallConfig {
             port: DEFAULT_PORT,
             fail_open: true,
+            min_age_hours: 0,
             denylist: DenylistSource::default(),
             telemetry: true,
             registries: BUILT_IN.to_vec(),
