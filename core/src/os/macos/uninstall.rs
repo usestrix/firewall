@@ -26,10 +26,8 @@ pub fn uninstall() -> Result<(), BoxError> {
         Err(error) if error.code() == errSecItemNotFound => false,
         Err(error) => return Err(error.into()),
     };
-    if system_keychain::load_secret(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?.is_some() {
-        system_keychain::delete_secret(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?;
-        removed = true;
-    }
+    // Reading a secret's data is limited to the extension, so delete without checking it exists.
+    system_keychain::delete_secret(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?;
     EnclaveKey::delete()?;
     for path in [CA_FILE, ENV_AGENT] {
         match std::fs::remove_file(path) {
