@@ -114,6 +114,22 @@ final class FirewallModel: NSObject, ObservableObject {
 
         completed = true
         log("Setup complete")
+        offerRestart()
+    }
+
+    /// Apps opened before setup, terminals included, only get NODE_EXTRA_CA_CERTS once reopened.
+    private func offerRestart() {
+        let alert = NSAlert()
+        alert.messageText = "Restart to finish setting up"
+        alert.informativeText = "Apps that were already open, such as terminals, can't install packages until they're reopened. Restarting reopens them all."
+        alert.addButton(withTitle: "Restart")
+        alert.addButton(withTitle: "Later")
+        NSApp.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let osascript = Process()
+        osascript.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        osascript.arguments = ["-e", "tell application \"loginwindow\" to «event aevtrest»"]
+        try? osascript.run()
     }
 
     /// After the admin gate, every stage runs even if an earlier one fails, so a partial uninstall never strands the rest.
