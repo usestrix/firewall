@@ -1,6 +1,7 @@
 #!/bin/bash
 # Builds and signs Firewall.app, installs it to /Applications, and packages it as build/Firewall.pkg.
-# Set NOTARY_PROFILE in macos/.env to a notarytool keychain profile to notarize the package.
+# The package is notarized with the notarytool keychain profile in NOTARY_PROFILE; `build.sh debug`
+# makes a Debug build and skips notarization.
 #
 # Xcode builds the bundles unsigned; they are signed here with Developer ID.
 set -euo pipefail
@@ -10,6 +11,10 @@ cd "$(dirname "$0")"
 : "${TEAM:?set TEAM in macos/.env}"
 export TEAM
 
+CONFIGURATION=Release
+if [ "${1:-}" = debug ]; then CONFIGURATION=Debug; fi
+[ $CONFIGURATION = Debug ] || : "${NOTARY_PROFILE:?set NOTARY_PROFILE in macos/.env}"
+
 APP_ID=com.usestrix.firewall
 EXT_ID=com.usestrix.firewall.extension
 VERSION=0.1
@@ -18,7 +23,7 @@ IDENTITY=${IDENTITY:-Developer ID Application}
 INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
-APP=build/Build/Products/Release/Installer.app
+APP=build/Build/Products/$CONFIGURATION/Installer.app
 EXT=$APP/Contents/Library/SystemExtensions/$EXT_ID.systemextension
 PKG_ROOT=build/pkg-root
 
@@ -27,13 +32,13 @@ main() {
   sign
   install_app
   package
-  [ -z "${NOTARY_PROFILE:-}" ] || notarize
+  [ $CONFIGURATION = Debug ] || notarize
 }
 
 build() {
   echo "==> Building"
   xcodegen generate >/dev/null
-  xcodebuild -project Firewall.xcodeproj -scheme Installer -configuration Release \
+  xcodebuild -project Firewall.xcodeproj -scheme Installer -configuration $CONFIGURATION \
     -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" build >/dev/null
 }
