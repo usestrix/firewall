@@ -13,8 +13,8 @@ export TEAM
 APP_ID=com.usestrix.firewall
 EXT_ID=com.usestrix.firewall.extension
 VERSION=0.1
-IDENTITY=${IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Developer ID Application/ {print $2; exit}')}
-INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-$(security find-identity -v | awk -F'"' '/Developer ID Installer/ {print $2; exit}')}
+IDENTITY=${IDENTITY:-Developer ID Application}
+INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
 APP=build/Build/Products/Release/Installer.app
