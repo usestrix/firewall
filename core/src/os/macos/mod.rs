@@ -25,10 +25,10 @@ use std::sync::Arc;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-const BUNDLE_ID: &str = "ai.strix.firewall";
+const BUNDLE_ID: &str = "com.usestrix.firewall";
 const KEYCHAIN_SERVICE: &str = BUNDLE_ID;
 const KEYCHAIN_ACCOUNT: &str = "ca";
-/// Must match `macos/LaunchAgents/ai.strix.firewall.env.plist`, which points npm at it.
+/// Must match `macos/LaunchAgents/com.usestrix.firewall.env.plist`, which points npm at it.
 const CA_FILE: &str = "/Library/Application Support/Firewall/ca.pem";
 
 #[derive(Clone)]
@@ -113,7 +113,7 @@ fn handler(exec: Executor) -> Result<Handler, BoxError> {
 }
 
 /// stderr is invisible in a system extension, so events go to the unified log:
-/// `log stream --predicate 'subsystem == "ai.strix.firewall"'`.
+/// `log stream --predicate 'subsystem == "com.usestrix.firewall"'`.
 fn init(_config: Option<&TransparentProxyInitConfig>) -> bool {
     // A panic crossing the FFI boundary aborts, and its message would go to stderr.
     std::panic::set_hook(Box::new(|panic| tracing::error!("{panic}")));
