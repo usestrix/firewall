@@ -6,7 +6,6 @@ use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
 pub const DEFAULT_PORT: u16 = 8080;
-const TOKEN_ENV: &str = "FIREWALL_GITHUB_TOKEN";
 
 #[derive(Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -38,17 +37,9 @@ pub struct AllowedPackage {
 pub struct DenylistSource {
     /// One file per ecosystem lives under here, named the way OSV names it, in lowercase.
     pub base: String,
-    /// Falls back to `FIREWALL_GITHUB_TOKEN`, so a token need not be written to disk.
-    pub token: Option<String>,
     /// Polled for a new commit, which re-fetches every list in use.
     pub revision: String,
     pub poll_secs: u64,
-}
-
-impl DenylistSource {
-    pub fn token(&self) -> Option<String> {
-        self.token.clone().or_else(|| std::env::var(TOKEN_ENV).ok())
-    }
 }
 
 impl Default for FirewallConfig {
@@ -69,7 +60,6 @@ impl Default for DenylistSource {
     fn default() -> Self {
         DenylistSource {
             base: "https://raw.githubusercontent.com/usestrix/malicious-packages/packages".into(),
-            token: None,
             revision: "https://api.github.com/repos/usestrix/malicious-packages/commits/packages"
                 .into(),
             poll_secs: 10,

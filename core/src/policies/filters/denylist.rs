@@ -3,7 +3,7 @@ use crate::config::DenylistSource;
 use crate::policies::registries::Registry;
 use crate::policies::Package;
 use rama::http::client::EasyHttpWebClient;
-use rama::http::header::{AUTHORIZATION, ETAG, IF_NONE_MATCH, USER_AGENT};
+use rama::http::header::{ETAG, IF_NONE_MATCH, USER_AGENT};
 use rama::http::service::client::HttpClientExt;
 use rama::http::{BodyExtractExt, StatusCode};
 use semver::Version;
@@ -37,20 +37,15 @@ type Lists = HashMap<&'static str, OnceCell<RwLock<Arc<FetchedDenylist>>>>;
 
 pub struct Denylist {
     source: DenylistSource,
-    token: Option<String>,
     lists: Arc<Lists>,
     watch: JoinHandle<()>,
 }
 
 impl Denylist {
-    pub fn new(
-        source: DenylistSource,
-        token: Option<String>,
-        ecosystems: impl Iterator<Item = &'static str>,
-    ) -> Self {
+    pub fn new(source: DenylistSource, ecosystems: impl Iterator<Item = &'static str>) -> Self {
         let lists: Arc<Lists> = Arc::new(ecosystems.map(|eco| (eco, OnceCell::new())).collect());
-        let watch = tokio::spawn(watch(source.clone(), token.clone(), Arc::clone(&lists)));
-        Denylist { source, token, lists, watch }
+        let watch = tokio::spawn(watch(source.clone(), Arc::clone(&lists)));
+        Denylist { source, lists, watch }
     }
 }
 
@@ -69,7 +64,7 @@ impl Filter for Denylist {
         Box::pin(async move {
             let eco = registry.osv_name;
             let load = || async {
-                RwLock::new(Arc::new(load(&self.source, self.token.as_deref(), eco).await))
+                RwLock::new(Arc::new(load(&self.source, eco).await))
             };
             let list = self.lists[eco].get_or_init(load).await;
             let list = Arc::clone(&list.read().expect("denylist lock"));
@@ -147,12 +142,12 @@ pub fn describe(advisories: &[&Advisory]) -> String {
 }
 
 /// A failed fetch leaves the last good list in place; a list that never loaded is retried every tick.
-async fn watch(source: DenylistSource, token: Option<String>, lists: Arc<Lists>) {
+async fn watch(source: DenylistSource, lists: Arc<Lists>) {
     let period = Duration::from_secs(source.poll_secs);
-    let mut seen = revision(&source, token.as_deref(), None).await;
+    let mut seen = revision(&source, None).await;
     loop {
         tokio::time::sleep(period).await;
-        let changed = revision(&source, token.as_deref(), seen.as_deref()).await;
+        let changed = revision(&source, seen.as_deref()).await;
         if let Some(current) = &changed {
             info!(revision = %current, "denylist source changed");
             seen = changed.clone();
@@ -163,7 +158,7 @@ async fn watch(source: DenylistSource, token: Option<String>, lists: Arc<Lists>)
             if changed.is_none() && !failed {
                 continue;
             }
-            if let Ok(packages) = load(&source, token.as_deref(), eco).await {
+            if let Ok(packages) = load(&source, eco).await {
                 *list.write().expect("denylist lock") = Arc::new(Ok(packages));
             }
         }
@@ -171,16 +166,9 @@ async fn watch(source: DenylistSource, token: Option<String>, lists: Arc<Lists>)
 }
 
 /// GitHub's 304 for an unchanged `If-None-Match` costs no rate limit.
-async fn revision(
-    source: &DenylistSource,
-    token: Option<&str>,
-    seen: Option<&str>,
-) -> Option<String> {
+async fn revision(source: &DenylistSource, seen: Option<&str>) -> Option<String> {
     let client = EasyHttpWebClient::default();
     let mut request = client.get(&source.revision).header(USER_AGENT, AGENT);
-    if let Some(token) = token {
-        request = request.header(AUTHORIZATION, format!("Bearer {token}"));
-    }
     if let Some(seen) = seen {
         request = request.header(IF_NONE_MATCH, seen);
     }
@@ -197,8 +185,8 @@ async fn revision(
     response.headers().get(ETAG)?.to_str().ok().map(str::to_owned)
 }
 
-async fn load(source: &DenylistSource, token: Option<&str>, eco: &'static str) -> FetchedDenylist {
-    let list = fetch(source, token, &eco.to_lowercase()).await;
+async fn load(source: &DenylistSource, eco: &'static str) -> FetchedDenylist {
+    let list = fetch(source, &eco.to_lowercase()).await;
     match &list {
         Ok(packages) => info!(%eco, packages = packages.len(), "denylist loaded"),
         Err(error) => warn!(%eco, %error, "denylist unavailable"),
@@ -206,13 +194,10 @@ async fn load(source: &DenylistSource, token: Option<&str>, eco: &'static str) -
     list
 }
 
-async fn fetch(source: &DenylistSource, token: Option<&str>, eco: &str) -> FetchedDenylist {
+async fn fetch(source: &DenylistSource, eco: &str) -> FetchedDenylist {
     let url = format!("{}/{eco}", source.base);
     let client = EasyHttpWebClient::default();
-    let mut request = client.get(&url).header(USER_AGENT, AGENT);
-    if let Some(token) = token {
-        request = request.header(AUTHORIZATION, format!("Bearer {token}"));
-    }
+    let request = client.get(&url).header(USER_AGENT, AGENT);
     let response = request.send().await.map_err(|e| e.to_string())?;
     if response.status() != StatusCode::OK {
         return Err(format!("{url} replied {}", response.status()));

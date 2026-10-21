@@ -27,7 +27,7 @@ impl Firewall {
             patterns.insert(registry.prefix, compiled.collect());
         }
         let ecosystems = config.registries.iter().map(|r| r.osv_name);
-        let denylist = Denylist::new(config.denylist.clone(), config.denylist.token(), ecosystems);
+        let denylist = Denylist::new(config.denylist.clone(), ecosystems);
         let mut filters: Vec<Box<dyn Filter>> = vec![Box::new(denylist), Box::new(Osv)];
         if config.min_age_hours > 0 {
             filters.push(Box::new(Age::new(config.min_age_hours)));
