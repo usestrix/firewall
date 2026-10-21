@@ -21,18 +21,27 @@ pub fn uninstall() -> Result<(), BoxError> {
         .label(COMMON_NAME)
         .limit(Limit::All)
         .delete();
-    match deleted {
-        Err(error) if error.code() != errSecItemNotFound => return Err(error.into()),
-        _ => {}
+    let mut removed = match deleted {
+        Ok(()) => true,
+        Err(error) if error.code() == errSecItemNotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+    if system_keychain::load_secret(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?.is_some() {
+        system_keychain::delete_secret(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?;
+        removed = true;
     }
-    system_keychain::delete_secret(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?;
     EnclaveKey::delete()?;
     for path in [CA_FILE, ENV_AGENT] {
         match std::fs::remove_file(path) {
-            Err(error) if error.kind() != ErrorKind::NotFound => return Err(error.into()),
-            _ => {}
+            Ok(()) => removed = true,
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
     }
-    info!("removed the CA from the system keychain");
+    if removed {
+        info!("removed the CA from the system keychain");
+    } else {
+        info!("nothing to uninstall");
+    }
     Ok(())
 }
