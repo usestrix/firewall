@@ -22,5 +22,20 @@ struct MenuBarView: View {
             Task { await model.restart() }
         }
         .disabled(model.busy)
+
+        if !model.blocked.isEmpty {
+            Divider()
+            ForEach(model.blocked) { package in
+                if !package.malicious {
+                    Menu("Held back \(package.label) (\(package.eco))") {
+                        Text(package.reason)
+                    }
+                } else {
+                    Menu("Blocked \(package.label) (\(package.eco))") {
+                        Text("Malicious: \(package.reason)")
+                    }
+                }
+            }
+        }
     }
 }

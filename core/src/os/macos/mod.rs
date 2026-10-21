@@ -5,7 +5,7 @@ mod uninstall;
 pub use uninstall::uninstall;
 
 use crate::config::FirewallConfig;
-use crate::{mitm, telemetry};
+use crate::{blocks, mitm, telemetry};
 use crate::Firewall;
 use rama::bytes::Bytes;
 use rama::error::BoxError;
@@ -56,6 +56,7 @@ impl TransparentProxyHandler for Handler {
         let message = String::from_utf8_lossy(&message).into_owned();
         Some(Bytes::from(match message.as_str() {
             "ca" => self.ca.pem.clone(),
+            "blocks" => serde_json::to_string(&blocks::take()).expect("blocks serialize"),
             other => format!("error: unknown message {other}"),
         }))
     }

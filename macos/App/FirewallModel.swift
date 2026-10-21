@@ -51,6 +51,7 @@ final class FirewallModel: NSObject, ObservableObject {
     @Published private(set) var completed = false
     @Published private(set) var removed = false
     @Published private(set) var screening = false
+    @Published private(set) var blocked: [BlockedPackage] = []
 
     private let logger = Logger(subsystem: FirewallIDs.appBundleID, category: "installer")
     private var pendingRequest: (request: OSSystemExtensionRequest, continuation: CheckedContinuation<Void, Error>)?
@@ -72,6 +73,7 @@ final class FirewallModel: NSObject, ObservableObject {
             await refresh()
             if CommandLine.arguments.contains("--install") { await install() }
         }
+        Task { await watchBlocks() }
     }
 
     // MARK: - Flows
@@ -181,6 +183,21 @@ final class FirewallModel: NSObject, ObservableObject {
             pane = "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.system_extension.network_extension"
         }
         if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
+    }
+
+    /// The extension cannot message the app, so the app asks it for blocks.
+    private func watchBlocks() async {
+        while true {
+            if screening, let reply = try? await providerMessage("blocks"),
+               let packages = try? JSONDecoder().decode([BlockedPackage].self, from: Data(reply.utf8)) {
+                for package in packages where !blocked.contains(package) {
+                    blocked.append(package)
+                    BlockAlert.show(package)
+                }
+                blocked = Array(blocked.suffix(10))
+            }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+        }
     }
 
     private func stage(_ step: ReferenceWritableKeyPath<FirewallModel, StepStatus>,

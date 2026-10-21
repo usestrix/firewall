@@ -47,7 +47,7 @@ impl Default for FirewallConfig {
         FirewallConfig {
             port: DEFAULT_PORT,
             fail_open: true,
-            min_age_hours: 0,
+            min_age_hours: 24,
             denylist: DenylistSource::default(),
             allow: HashMap::new(),
             telemetry: true,
