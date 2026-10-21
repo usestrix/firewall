@@ -97,7 +97,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.usestrix.firewall
-        PRODUCT_NAME: Strix Firewall
     info:
       path: App/Info.plist
       properties:

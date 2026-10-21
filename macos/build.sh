@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds and signs Strix Firewall.app, installs it to /Applications, and packages it as build/Firewall.pkg.
+# Builds and signs StrixFirewall.app, installs it to /Applications, and packages it as build/Firewall.pkg.
 # The package is notarized with the notarytool keychain profile in NOTARY_PROFILE; `build.sh debug`
 # makes a Debug build and skips notarization.
 #
@@ -23,8 +23,8 @@ IDENTITY=${IDENTITY:-Developer ID Application}
 INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
-APP="build/Build/Products/$CONFIGURATION/Strix Firewall.app"
-EXT="$APP/Contents/Library/SystemExtensions/$EXT_ID.systemextension"
+APP=build/Build/Products/$CONFIGURATION/StrixFirewall.app
+EXT=$APP/Contents/Library/SystemExtensions/$EXT_ID.systemextension
 PKG_ROOT=build/pkg-root
 
 main() {
@@ -57,9 +57,9 @@ sign() {
 
 # The extension can only be activated from /Applications.
 install_app() {
-  echo "==> Installing /Applications/Strix Firewall.app"
-  rm -rf "/Applications/Strix Firewall.app"
-  cp -R "$APP" "/Applications/Strix Firewall.app"
+  echo "==> Installing /Applications/StrixFirewall.app"
+  rm -rf /Applications/StrixFirewall.app
+  cp -R "$APP" /Applications/StrixFirewall.app
 }
 
 # Marked non-relocatable so the installer never updates another copy with the same bundle id.
@@ -67,7 +67,7 @@ package() {
   echo "==> Packaging build/Firewall.pkg"
   rm -rf "$PKG_ROOT"
   mkdir -p "$PKG_ROOT/Applications" "$PKG_ROOT/Library/LaunchAgents"
-  cp -R "$APP" "$PKG_ROOT/Applications/Strix Firewall.app"
+  cp -R "$APP" "$PKG_ROOT/Applications/StrixFirewall.app"
   cp LaunchAgents/com.usestrix.firewall.env.plist "$PKG_ROOT/Library/LaunchAgents/"
 
   pkgbuild --analyze --root "$PKG_ROOT" build/components.plist >/dev/null
