@@ -39,10 +39,6 @@ impl EnclaveKey {
             .ok_or("secure enclave key has no exportable public half")?;
         Ok(EnclaveKey { key, public: public.to_vec() })
     }
-
-    pub fn delete() -> Result<(), BoxError> {
-        Ok(system_keychain::delete_secret(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)?)
-    }
 }
 
 impl PublicKeyData for EnclaveKey {

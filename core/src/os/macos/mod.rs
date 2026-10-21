@@ -1,6 +1,5 @@
 mod enclave;
 mod install;
-mod uninstall;
 
 use crate::config::FirewallConfig;
 use crate::{mitm, telemetry};
@@ -54,10 +53,6 @@ impl TransparentProxyHandler for Handler {
         let message = String::from_utf8_lossy(&message).into_owned();
         Some(Bytes::from(match message.as_str() {
             "ca" => self.ca.pem.clone(),
-            "uninstall" => match uninstall::certificate_authority(&self.ca) {
-                Ok(()) => "ok".to_owned(),
-                Err(error) => format!("error: {error}"),
-            },
             other => format!("error: unknown message {other}"),
         }))
     }
