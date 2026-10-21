@@ -35,7 +35,7 @@ struct Telemetry {
     events: Mutex<Vec<Value>>,
 }
 
-pub fn screened(firewall: &Firewall, url: &str, blocked: bool) {
+pub fn screened(firewall: &Firewall, url: &str, reason: Option<&str>) {
     if TELEMETRY.is_none() {
         return;
     }
@@ -45,9 +45,10 @@ pub fn screened(firewall: &Firewall, url: &str, blocked: bool) {
     let Some(pkg) = firewall.resolve(registry, rest).pkg else {
         return;
     };
-    let mut properties = json!({ "eco": registry.eco, "blocked": blocked });
-    if blocked {
+    let mut properties = json!({ "eco": registry.eco, "blocked": reason.is_some() });
+    if let Some(reason) = reason {
         properties["package"] = pkg.label().into();
+        properties["reason"] = reason.into();
     }
     record("package_screened", properties);
 }

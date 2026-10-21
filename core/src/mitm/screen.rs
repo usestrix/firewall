@@ -37,7 +37,7 @@ where
     async fn serve(&self, req: Request) -> Result<Response, Self::Error> {
         if let Some(url) = https_url(&req) {
             let reason = policies::screen(&url, &self.firewall).await;
-            telemetry::screened(&self.firewall, &url, reason.is_some());
+            telemetry::screened(&self.firewall, &url, reason.as_deref());
             if let Some(reason) = reason {
                 warn!(%url, "blocked by firewall: {reason}");
                 return Ok(blocked(&reason));

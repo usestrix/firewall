@@ -82,7 +82,7 @@ async fn handle(req: Request, firewall: &Firewall) -> Result<Response, Infallibl
     };
 
     let reason = policies::screen(&url, firewall).await;
-    telemetry::screened(firewall, &url, reason.is_some());
+    telemetry::screened(firewall, &url, reason.as_deref());
     if let Some(reason) = reason {
         warn!(method = %req.method(), %url, %reason, "blocked");
         return Ok(blocked(&reason));
