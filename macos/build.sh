@@ -1,8 +1,8 @@
 #!/bin/bash
 # Builds and signs Firewall.app, installs it to /Applications, and packages it as build/Firewall.pkg.
+# Set NOTARY_PROFILE in macos/.env to a notarytool keychain profile to notarize the package.
 #
-# Xcode builds the bundles unsigned; they are signed here because the granted NetworkExtension
-# entitlement has no -systemextension variant, so Xcode cannot sign them itself.
+# Xcode builds the bundles unsigned; they are signed here with Developer ID.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -13,10 +13,12 @@ export TEAM
 APP_ID=com.usestrix.firewall
 EXT_ID=com.usestrix.firewall.extension
 VERSION=0.1
-IDENTITY=${IDENTITY:-$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')}
+# Matched as a substring of the certificate name; set these if more than one certificate matches.
+IDENTITY=${IDENTITY:-Developer ID Application}
+INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
-APP=build/Build/Products/Debug/Installer.app
+APP=build/Build/Products/Release/Installer.app
 EXT=$APP/Contents/Library/SystemExtensions/$EXT_ID.systemextension
 PKG_ROOT=build/pkg-root
 
@@ -25,12 +27,13 @@ main() {
   sign
   install_app
   package
+  [ -z "${NOTARY_PROFILE:-}" ] || notarize
 }
 
 build() {
   echo "==> Building"
   xcodegen generate >/dev/null
-  xcodebuild -project Firewall.xcodeproj -scheme Installer -configuration Debug \
+  xcodebuild -project Firewall.xcodeproj -scheme Installer -configuration Release \
     -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" build >/dev/null
 }
@@ -39,9 +42,9 @@ sign() {
   echo "==> Signing with $IDENTITY"
   cp "$(profile_for $APP_ID)" "$APP/Contents/embedded.provisionprofile"
   cp "$(profile_for $EXT_ID)" "$EXT/Contents/embedded.provisionprofile"
-  codesign --force --options runtime --timestamp=none \
+  codesign --force --options runtime --timestamp \
     --entitlements Extension/Extension.entitlements -s "$IDENTITY" "$EXT"
-  codesign --force --options runtime --timestamp=none \
+  codesign --force --options runtime --timestamp \
     --entitlements Installer/Installer.entitlements -s "$IDENTITY" "$APP"
   codesign --verify --deep --strict "$APP"
 }
@@ -64,7 +67,14 @@ package() {
   pkgbuild --analyze --root "$PKG_ROOT" build/components.plist >/dev/null
   plutil -replace 0.BundleIsRelocatable -bool NO build/components.plist
   pkgbuild --root "$PKG_ROOT" --component-plist build/components.plist --scripts pkg \
-    --identifier $APP_ID --version $VERSION --install-location / build/Firewall.pkg >/dev/null
+    --identifier $APP_ID --version $VERSION --install-location / --sign "$INSTALLER_IDENTITY" \
+    build/Firewall.pkg >/dev/null
+}
+
+notarize() {
+  echo "==> Notarizing build/Firewall.pkg"
+  xcrun notarytool submit build/Firewall.pkg --keychain-profile "$NOTARY_PROFILE" --wait
+  xcrun stapler staple build/Firewall.pkg
 }
 
 # Prints the newest provisioning profile Xcode has downloaded for a bundle id.
