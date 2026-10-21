@@ -108,7 +108,7 @@ struct ContentView: View {
             }
             Spacer()
             Button("Uninstall") { Task { await model.uninstall() } }
-                .disabled(model.busy)
+                .disabled(model.busy && !model.awaitingApproval)
             Button("Install") { Task { await model.install() } }
                 .keyboardShortcut(.defaultAction)
                 .disabled(model.busy || model.completed)
