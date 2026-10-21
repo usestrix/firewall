@@ -72,6 +72,9 @@ pub async fn screen(url: &str, firewall: &Firewall) -> Option<String> {
         Some((_, Verdict::Deny(reason))) => {
             Some(format!("{} {reason}", pkg.label()))
         }
+        Some((filter, Verdict::Unknown(e))) if !firewall.config.fail_open => {
+            Some(format!("{} could not be checked by {filter} ({e})", pkg.label()))
+        }
         _ => None,
     }
 }
