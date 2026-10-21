@@ -2,6 +2,8 @@ mod enclave;
 mod install;
 mod uninstall;
 
+pub use uninstall::uninstall;
+
 use crate::config::FirewallConfig;
 use crate::{mitm, telemetry};
 use crate::Firewall;
@@ -49,15 +51,11 @@ impl TransparentProxyHandler for Handler {
         TransparentProxyConfig::new().with_rules(vec![tcp_rule(80), tcp_rule(443)])
     }
 
-    /// Setup requests from the installer. Never empty: Swift cannot tell that from no reply.
+    /// Setup requests from the app. Never empty: Swift cannot tell that from no reply.
     async fn handle_app_message(&self, _exec: Executor, message: Bytes) -> Option<Bytes> {
         let message = String::from_utf8_lossy(&message).into_owned();
         Some(Bytes::from(match message.as_str() {
             "ca" => self.ca.pem.clone(),
-            "uninstall" => match uninstall::certificate_authority(&self.ca) {
-                Ok(()) => "ok".to_owned(),
-                Err(error) => format!("error: {error}"),
-            },
             other => format!("error: unknown message {other}"),
         }))
     }

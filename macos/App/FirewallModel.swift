@@ -23,22 +23,23 @@ enum StepStatus: Equatable {
     }
 }
 
-enum InstallerError: Error, LocalizedError {
+enum FirewallError: Error, LocalizedError {
     case extensionUnavailable
-    case extensionRefused(String)
     case screeningDidNotStart(NEVPNStatus)
+    case extensionStopped(String)
 
     var errorDescription: String? {
         switch self {
         case .extensionUnavailable: return "The extension is not running"
-        case let .extensionRefused(reply): return "The extension replied \(reply)"
         case let .screeningDidNotStart(status): return "Screening did not start (\(status.label))"
+        case let .extensionStopped(reason):
+            return "The extension stopped: \(reason). Its log: log show --last 5m --predicate 'subsystem BEGINSWITH \"\(FirewallIDs.appBundleID)\"'"
         }
     }
 }
 
 @MainActor
-final class InstallerModel: NSObject, ObservableObject {
+final class FirewallModel: NSObject, ObservableObject {
     @Published private(set) var extensionStep = StepStatus.pending
     @Published private(set) var screeningStep = StepStatus.pending
     @Published private(set) var trustStep = StepStatus.pending
@@ -124,9 +125,9 @@ final class InstallerModel: NSObject, ObservableObject {
             log("Uninstall cancelled")
             return
         }
-        // The extension owns the private key, so ask it before tearing down the session that carries the request.
-        let strandedKey = await removeStoredCA()
+        // Stop screening first so the extension cannot mint a fresh CA after it is removed.
         await removeConfiguration()
+        let strandedKey = removeStoredCA()
         await deactivate()
         if let strandedKey { trustStep = .failed(strandedKey) }
 
@@ -167,7 +168,7 @@ final class InstallerModel: NSObject, ObservableObject {
         }
     }
 
-    private func stage(_ step: ReferenceWritableKeyPath<InstallerModel, StepStatus>,
+    private func stage(_ step: ReferenceWritableKeyPath<FirewallModel, StepStatus>,
                        running: String,
                        work: @MainActor () async throws -> String) async -> Bool {
         self[keyPath: step] = .running(running)
@@ -211,6 +212,9 @@ final class InstallerModel: NSObject, ObservableObject {
                 forExtensionWithIdentifier: FirewallIDs.extensionBundleID, queue: .main))
             extensionStep = .pending
             log("System extension deactivated, macOS finishes removing it on the next reboot")
+        } catch OSSystemExtensionError.extensionNotFound {
+            extensionStep = .pending
+            log("No system extension to deactivate")
         } catch {
             extensionStep = .failed(error.localizedDescription)
             log("Deactivation failed: \(error.localizedDescription)")
@@ -245,17 +249,18 @@ final class InstallerModel: NSObject, ObservableObject {
         return true
     }
 
-    /// Only root can delete the key, so the extension does it; returns what to report if it survived.
-    private func removeStoredCA() async -> String? {
-        do {
-            let reply = try await providerMessage("uninstall")
-            guard reply == "ok" else { throw InstallerError.extensionRefused(reply) }
-            log("Removed the CA, its exported copy and the env agent")
-            return nil
-        } catch {
-            log("Could not remove the CA: \(error.localizedDescription)")
+    /// The extension wrote these as root, so the bundled CLI removes them behind an admin prompt; returns what to report if it failed.
+    private func removeStoredCA() -> String? {
+        let cli = Bundle.main.path(forAuxiliaryExecutable: "firewall") ?? ""
+        let script = "do shell script quoted form of \"\(cli)\" & \" uninstall\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error {
+            log("Could not remove the CA: \(error[NSAppleScript.errorMessage] ?? error)")
             return "The CA private key is still in the System keychain"
         }
+        log("Removed the CA, its exported copy and the env agent")
+        return nil
     }
 
     // MARK: - System extension
@@ -295,16 +300,22 @@ final class InstallerModel: NSObject, ObservableObject {
         try await manager.loadFromPreferences()
         watched = manager
 
+        screeningStep = .running("Starting the extension")
         try manager.connection.startVPNTunnel()
         guard try await wait(for: .connected, on: manager.connection) else {
-            throw InstallerError.screeningDidNotStart(manager.connection.status)
+            do {
+                try await manager.connection.fetchLastDisconnectError()
+            } catch {
+                throw FirewallError.extensionStopped(error.localizedDescription)
+            }
+            throw FirewallError.screeningDidNotStart(manager.connection.status)
         }
         return "Screening package downloads"
     }
 
     private func restartScreening() async throws -> String {
         guard let manager = try await loadManager() else {
-            throw InstallerError.extensionUnavailable
+            throw FirewallError.extensionUnavailable
         }
         manager.connection.stopVPNTunnel()
         _ = try await wait(for: .disconnected, on: manager.connection)
@@ -312,7 +323,7 @@ final class InstallerModel: NSObject, ObservableObject {
     }
 
     private func stopScreening() async throws -> String {
-        guard let manager = try await loadManager() else { throw InstallerError.extensionUnavailable }
+        guard let manager = try await loadManager() else { throw FirewallError.extensionUnavailable }
         manager.isEnabled = false
         try await manager.saveToPreferences()
         manager.connection.stopVPNTunnel()
@@ -320,9 +331,13 @@ final class InstallerModel: NSObject, ObservableObject {
         return "Screening disabled"
     }
 
+    /// Gives up early once a start has failed, which shows as connecting then disconnected.
     private func wait(for status: NEVPNStatus, on connection: NEVPNConnection) async throws -> Bool {
+        var connecting = false
         for _ in 0 ..< 60 {
             if connection.status == status { return true }
+            if connection.status == .connecting { connecting = true }
+            if connecting && connection.status == .disconnected { return false }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
         return false
@@ -358,13 +373,13 @@ final class InstallerModel: NSObject, ObservableObject {
 
     private func providerMessage(_ message: String) async throws -> String {
         guard let session = watched?.connection as? NETunnelProviderSession else {
-            throw InstallerError.extensionUnavailable
+            throw FirewallError.extensionUnavailable
         }
         return try await withCheckedThrowingContinuation { continuation in
             do {
                 try session.sendProviderMessage(Data(message.utf8)) { response in
                     guard let response, let reply = String(data: response, encoding: .utf8) else {
-                        continuation.resume(throwing: InstallerError.extensionUnavailable)
+                        continuation.resume(throwing: FirewallError.extensionUnavailable)
                         return
                     }
                     continuation.resume(returning: reply)
@@ -381,7 +396,7 @@ final class InstallerModel: NSObject, ObservableObject {
     }
 }
 
-extension InstallerModel: OSSystemExtensionRequestDelegate {
+extension FirewallModel: OSSystemExtensionRequestDelegate {
     nonisolated func request(_ request: OSSystemExtensionRequest,
                              actionForReplacingExtension existing: OSSystemExtensionProperties,
                              withExtension replacement: OSSystemExtensionProperties) -> OSSystemExtensionRequest.ReplacementAction {

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct MenuBarView: View {
-    @ObservedObject var model: InstallerModel
+    @ObservedObject var model: FirewallModel
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -9,7 +9,7 @@ struct MenuBarView: View {
 
         Divider()
 
-        Button("Installer") {
+        Button("Setup") {
             SetupWindow.open(openWindow)
         }
 

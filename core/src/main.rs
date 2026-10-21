@@ -12,6 +12,10 @@ fn main() {
         firewall::init_logging("info");
         serve()
     }
+    if matches.subcommand_matches("uninstall").is_some() {
+        firewall::init_logging("info");
+        uninstall()
+    }
     let mut command = matches.get_many::<String>("COMMAND").unwrap().cloned();
     let program = command.next().unwrap();
     firewall::init_logging("warn");
@@ -40,6 +44,8 @@ fn options() -> Command {
             Command::new("serve")
                 .about("Serve a local registry for package managers configured to use it"),
         )
+        // Run as root by the macOS app's uninstall.
+        .subcommand(Command::new("uninstall").hide(true))
         .arg(
             Arg::new("COMMAND")
                 .help("A command to run with its package downloads screened")
@@ -66,6 +72,13 @@ fn serve() -> ! {
             fail("port", &format!("not allowed to listen on port {port}"))
         }
         Err(e) => fail("serve", &format!("could not serve on port {port}: {e}")),
+    }
+}
+
+fn uninstall() -> ! {
+    match firewall::os::uninstall() {
+        Ok(()) => exit(0),
+        Err(e) => fail("uninstall", &format!("could not uninstall: {e}")),
     }
 }
 
