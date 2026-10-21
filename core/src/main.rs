@@ -56,6 +56,7 @@ fn options() -> Command {
 }
 
 fn serve() -> ! {
+    telemetry::set_mode("proxy");
     let config = load();
     let port = config.port;
     print_setup(&config);
@@ -83,6 +84,7 @@ fn uninstall() -> ! {
 }
 
 fn run(invocation: Invocation) -> ! {
+    telemetry::set_mode("wrapper");
     let command = &invocation.program;
     let port = match aliasing::spawn(0, load()) {
         Ok(port) => port,

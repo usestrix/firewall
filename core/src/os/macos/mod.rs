@@ -98,6 +98,7 @@ impl TransparentProxyHandlerFactory for Factory {
 }
 
 fn handler(exec: Executor) -> Result<Handler, BoxError> {
+    telemetry::set_mode("extension");
     telemetry::heartbeat();
     let config = FirewallConfig::load().inspect_err(|_| telemetry::error("config"))?;
     let firewall = Arc::new(Firewall::new(config));
