@@ -212,6 +212,9 @@ final class FirewallModel: NSObject, ObservableObject {
                 forExtensionWithIdentifier: FirewallIDs.extensionBundleID, queue: .main))
             extensionStep = .pending
             log("System extension deactivated, macOS finishes removing it on the next reboot")
+        } catch OSSystemExtensionError.extensionNotFound {
+            extensionStep = .pending
+            log("No system extension to deactivate")
         } catch {
             extensionStep = .failed(error.localizedDescription)
             log("Deactivation failed: \(error.localizedDescription)")
