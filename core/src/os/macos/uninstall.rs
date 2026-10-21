@@ -1,5 +1,5 @@
 use super::enclave::EnclaveKey;
-use super::{CA_FILE, KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE};
+use super::{CA_FILE, KEYCHAIN_ACCOUNT, KEYCHAIN_SERVICE, SYSTEM_KEYCHAIN};
 use crate::mitm::COMMON_NAME;
 use rama::error::BoxError;
 use rama::net::apple::networkextension::system_keychain;
@@ -17,7 +17,7 @@ const ENV_AGENT: &str = "/Library/LaunchAgents/com.usestrix.firewall.env.plist";
 pub fn uninstall() -> Result<(), BoxError> {
     let deleted = ItemSearchOptions::new()
         .class(ItemClass::certificate())
-        .keychains(&[SecKeychain::open("/Library/Keychains/System.keychain")?])
+        .keychains(&[SecKeychain::open(SYSTEM_KEYCHAIN)?])
         .label(COMMON_NAME)
         .limit(Limit::All)
         .delete();

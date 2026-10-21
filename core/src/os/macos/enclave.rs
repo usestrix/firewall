@@ -33,10 +33,17 @@ impl EnclaveKey {
             Some(blob) => load(&blob)?,
             None => create()?,
         };
+        Self::new(key)
+    }
+
+    pub fn new(key: SecKey) -> Result<Self, BoxError> {
         let public = key
             .public_key()
             .and_then(|public| public.external_representation())
             .ok_or("secure enclave key has no exportable public half")?;
+        if public.len() != 65 {
+            return Err("the CA key must be P-256".into());
+        }
         Ok(EnclaveKey { key, public: public.to_vec() })
     }
 
