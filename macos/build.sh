@@ -1,6 +1,6 @@
 #!/bin/bash
-# Builds and signs Firewall.app, installs it to /Applications, and packages it as a notarized
-# build/Firewall.pkg. Notarization uses the `firewall` notarytool keychain profile.
+# Builds and signs Firewall.app, installs it to /Applications, and packages it as build/Firewall.pkg.
+# Set NOTARY_PROFILE in macos/.env to a notarytool keychain profile to notarize the package.
 #
 # Xcode builds the bundles unsigned; they are signed here with Developer ID.
 set -euo pipefail
@@ -27,7 +27,7 @@ main() {
   sign
   install_app
   package
-  notarize
+  [ -z "${NOTARY_PROFILE:-}" ] || notarize
 }
 
 build() {
@@ -73,7 +73,7 @@ package() {
 
 notarize() {
   echo "==> Notarizing build/Firewall.pkg"
-  xcrun notarytool submit build/Firewall.pkg --keychain-profile firewall --wait
+  xcrun notarytool submit build/Firewall.pkg --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple build/Firewall.pkg
 }
 
