@@ -1,5 +1,7 @@
 use firewall::config::path;
-use firewall::FirewallConfig;
+use firewall::policies::filters::consult;
+use firewall::policies::Package;
+use firewall::{Firewall, FirewallConfig};
 
 #[test]
 fn a_file_only_has_to_set_what_it_changes() {
@@ -18,4 +20,15 @@ fn a_misspelled_setting_is_an_error() {
 fn the_config_lives_under_the_config_directory() {
     let path = path().expect("a home directory");
     assert!(path.ends_with("config.json"), "{}", path.display());
+}
+
+#[tokio::test]
+async fn an_allowed_version_skips_the_filters() {
+    // An unreachable denylist would otherwise leave the package unchecked.
+    let config = r#"{"allow": {"go": [{"name": "golang.org/x/net", "version": "v0.20.0"}]}, "denylist": {"base": "http://127.0.0.1:1"}}"#;
+    let firewall = Firewall::new(serde_json::from_str(config).expect("parses"));
+    let (registry, _) = firewall.match_on("/go/golang.org/x/net/@v/list", |r| r.prefix).expect("go");
+    let pkg = |version: &str| Package { name: "golang.org/x/net".into(), version: Some(version.into()) };
+    assert!(consult(&firewall, registry, &pkg("0.20.0")).await.is_none());
+    assert!(consult(&firewall, registry, &pkg("0.21.0")).await.is_some());
 }
