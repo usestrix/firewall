@@ -175,6 +175,14 @@ final class FirewallModel: NSObject, ObservableObject {
         }
     }
 
+    func openApprovalSettings() {
+        var pane = "x-apple.systempreferences:com.apple.preference.security"
+        if #available(macOS 15, *) {
+            pane = "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.system_extension.network_extension"
+        }
+        if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
+    }
+
     private func stage(_ step: ReferenceWritableKeyPath<FirewallModel, StepStatus>,
                        running: String,
                        work: @MainActor () async throws -> String) async -> Bool {

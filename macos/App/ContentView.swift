@@ -84,6 +84,9 @@ struct ContentView: View {
                     .font(.callout)
             }
             Spacer()
+            if model.awaitingApproval {
+                Button("Open System Settings") { model.openApprovalSettings() }
+            }
             Button("Uninstall") { Task { await model.uninstall() } }
                 .disabled(model.busy && !model.awaitingApproval)
             Button("Install") { Task { await model.install() } }
