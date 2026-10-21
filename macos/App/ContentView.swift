@@ -38,9 +38,11 @@ struct ContentView: View {
 
     private var header: some View {
         HStack(spacing: 14) {
-            Image(systemName: "shield.lefthalf.filled")
-                .font(.system(size: 34, weight: .light))
-                .foregroundStyle(.tint)
+            Image(nsImage: NSImage(named: "logo-transparent")!)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(height: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Firewall").font(.title2.weight(.semibold))
                 Text("Screens package downloads before they reach your machine.")
@@ -129,7 +131,7 @@ private struct StepRow: View {
                 Text(title).font(.body.weight(.medium))
                 Text(note).font(.caption).foregroundStyle(.secondary)
                 Text(status.detail)
-                    .font(.caption)
+                    .font(status.isRunning ? .body : .caption)
                     .foregroundStyle(tint)
                     .textSelection(.enabled)
             }

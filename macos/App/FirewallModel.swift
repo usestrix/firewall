@@ -21,6 +21,11 @@ enum StepStatus: Equatable {
         if case .failed = self { return true }
         return false
     }
+
+    var isRunning: Bool {
+        if case .running = self { return true }
+        return false
+    }
 }
 
 enum FirewallError: Error, LocalizedError {
@@ -274,6 +279,7 @@ final class FirewallModel: NSObject, ObservableObject {
     }
 
     private func finishRequest(_ result: Result<Void, Error>) {
+        NSApp.activate(ignoringOtherApps: true)
         pendingRequest?.resume(with: result)
         pendingRequest = nil
     }
@@ -405,12 +411,16 @@ extension FirewallModel: OSSystemExtensionRequestDelegate {
 
     nonisolated func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
         Task { @MainActor in
-            extensionStep = .running("Approve Firewall in System Settings › General › Login Items & Extensions")
-            log("Waiting for user approval")
-            // Only MDM can pre-approve a system extension, so take them to the switch.
-            if let pane = URL(string: "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.system_extension.network_extension") {
-                NSWorkspace.shared.open(pane)
+            // Only MDM can pre-approve a system extension, so take them as close to the switch as a URL can.
+            var instruction = "In System Settings › Privacy & Security, click Allow for StrixFirewall"
+            var pane = "x-apple.systempreferences:com.apple.preference.security"
+            if #available(macOS 15, *) {
+                instruction = "In System Settings › General › Login Items & Extensions, click Network Extensions and turn on StrixFirewall"
+                pane = "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.system_extension.network_extension"
             }
+            extensionStep = .running(instruction)
+            log("Waiting for user approval")
+            if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
         }
     }
 
