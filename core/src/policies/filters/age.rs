@@ -9,7 +9,6 @@ use serde_json::Value;
 use time::format_description::well_known::Rfc3339;
 use time::{Duration, OffsetDateTime};
 
-/// Holds back a version until it has been public long enough for malware in it to be caught.
 pub struct Age {
     min: Duration,
 }
@@ -29,20 +28,17 @@ impl Filter for Age {
         Box::pin(async move {
             let Some(version) = pkg.version.as_deref() else { return Verdict::Allow };
             let Some(published) = &registry.published else { return Verdict::Allow };
-            let at = match published_at(published, &pkg.name, version).await {
+            let published_at = match published_at(published, &pkg.name, version).await {
                 Ok(at) => at,
                 Err(e) => return Verdict::Unknown(e),
             };
-            let age = OffsetDateTime::now_utc() - at;
+
+            let age = OffsetDateTime::now_utc() - published_at;
             if age >= self.min {
-                Verdict::Allow
-            } else {
-                Verdict::Deny(format!(
-                    "was published {} hours ago, under the {}-hour minimum",
-                    age.whole_hours(),
-                    self.min.whole_hours()
-                ))
+                return Verdict::Allow;
             }
+            let (hours, min) = (age.whole_hours(), self.min.whole_hours());
+            Verdict::Deny(format!("was published {hours} hours ago, under the {min}-hour minimum"))
         })
     }
 }
@@ -56,8 +52,8 @@ async fn published_at(
         Some(escape) => escape(name),
         None => name.to_string(),
     };
-    let fill = |template: &str| template.replace("{name}", &name).replace("{version}", version);
-    let url = fill(published.url);
+    let url = published.url.replace("{name}", &name).replace("{version}", version);
+    let pointer = published.pointer.replace("{version}", version);
 
     let client = EasyHttpWebClient::default();
     let response = client.get(&url).header(USER_AGENT, AGENT).send().await;
@@ -68,7 +64,8 @@ async fn published_at(
     let text = response.try_into_string().await.map_err(|e| e.to_string())?;
     let body: Value =
         serde_json::from_str(&text).map_err(|e| format!("{url} sent unreadable JSON: {e}"))?;
-    let Some(stamp) = body.pointer(&fill(published.pointer)).and_then(Value::as_str) else {
+
+    let Some(stamp) = body.pointer(&pointer).and_then(Value::as_str) else {
         return Err(format!("{url} gave no publish time"));
     };
     OffsetDateTime::parse(stamp, &Rfc3339).map_err(|e| format!("{url} sent a bad time: {e}"))

@@ -51,13 +51,11 @@ pub struct Registry {
     pub published: Option<Published>,
 }
 
-/// Where a version's publish time is read; `{name}` and `{version}` are filled into both.
+/// A URL to fetch and a JSON pointer to the timestamp in its reply.
 #[derive(Debug)]
 pub struct Published {
     pub url: &'static str,
-    /// A JSON pointer to an RFC 3339 timestamp.
     pub pointer: &'static str,
-    /// Undoes `Registry::normalize` where the URL needs the escaped name.
     pub escape: Option<fn(&str) -> String>,
 }
 

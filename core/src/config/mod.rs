@@ -13,7 +13,7 @@ pub struct FirewallConfig {
     pub port: u16,
     /// Allow a package when a filter could not check it.
     pub fail_open: bool,
-    /// Block versions published fewer than this many hours ago; 0 turns the check off.
+    /// 0 turns the age check off.
     pub min_age_hours: u64,
     pub denylist: DenylistSource,
     pub telemetry: bool,
