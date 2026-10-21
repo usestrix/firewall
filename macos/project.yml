@@ -87,25 +87,25 @@ targets:
               $([ "$CONFIGURATION" = Debug ] || echo --release)
           done
 
-  Installer:
+  StrixFirewall:
     type: application
     platform: macOS
     sources:
-      - Installer
+      - App
       - path: ../assets/logo-transparent.png
         buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.usestrix.firewall
     info:
-      path: Installer/Info.plist
+      path: App/Info.plist
       properties:
         CFBundleShortVersionString: "0.1"
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
         LSUIElement: true
     entitlements:
-      path: Installer/Installer.entitlements
+      path: App/App.entitlements
       properties:
         com.apple.application-identifier: ${TEAM}.com.usestrix.firewall
         com.apple.developer.team-identifier: ${TEAM}

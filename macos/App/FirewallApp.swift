@@ -1,8 +1,8 @@
 import SwiftUI
 
 @main
-struct InstallerApp: App {
-    @StateObject private var model = InstallerModel()
+struct FirewallApp: App {
+    @StateObject private var model = FirewallModel()
 
     var body: some Scene {
         MenuBarExtra {
@@ -31,7 +31,7 @@ enum SetupWindow {
 
 /// An accessory app restores no windows, so setup is raised from the label, the one view built at launch.
 private struct MenuBarLabel: View {
-    @ObservedObject var model: InstallerModel
+    @ObservedObject var model: FirewallModel
     @Environment(\.openWindow) private var openWindow
     @State private var raised = false
 
