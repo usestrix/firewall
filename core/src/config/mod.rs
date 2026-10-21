@@ -1,6 +1,7 @@
 use crate::policies::registries::{Registry, BUILT_IN};
 use directories::ProjectDirs;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
 
@@ -16,10 +17,20 @@ pub struct FirewallConfig {
     /// 0 turns the age check off.
     pub min_age_hours: u64,
     pub denylist: DenylistSource,
+    /// Packages never screened, by ecosystem: `{"npm": [{"name": "left-pad"}]}`.
+    pub allow: HashMap<String, Vec<AllowedPackage>>,
     pub telemetry: bool,
     /// Not describable in the file yet, so this is always the built-in table.
     #[serde(skip)]
     pub registries: Vec<&'static Registry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AllowedPackage {
+    pub name: String,
+    /// Every version when absent.
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,6 +58,7 @@ impl Default for FirewallConfig {
             fail_open: true,
             min_age_hours: 0,
             denylist: DenylistSource::default(),
+            allow: HashMap::new(),
             telemetry: true,
             registries: BUILT_IN.to_vec(),
         }
