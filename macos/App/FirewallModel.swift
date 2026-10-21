@@ -7,23 +7,20 @@ import SystemExtensions
 enum StepStatus: Equatable {
     case pending
     case running(String)
+    /// Waiting on the user to do something outside the app.
+    case needsAction(String)
     case done(String)
     case failed(String)
 
     var detail: String {
         switch self {
         case .pending: return "Not started"
-        case let .running(text), let .done(text), let .failed(text): return text
+        case let .running(text), let .needsAction(text), let .done(text), let .failed(text): return text
         }
     }
 
     var isFailed: Bool {
         if case .failed = self { return true }
-        return false
-    }
-
-    var isRunning: Bool {
-        if case .running = self { return true }
         return false
     }
 }
@@ -427,7 +424,7 @@ extension FirewallModel: OSSystemExtensionRequestDelegate {
                 instruction = "In System Settings › General › Login Items & Extensions, click Network Extensions and turn on StrixFirewall"
                 pane = "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.system_extension.network_extension"
             }
-            extensionStep = .running(instruction)
+            extensionStep = .needsAction(instruction)
             awaitingApproval = true
             log("Waiting for user approval")
             if let url = URL(string: pane) { NSWorkspace.shared.open(url) }

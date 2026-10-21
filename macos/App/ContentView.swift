@@ -131,9 +131,10 @@ private struct StepRow: View {
                 Text(title).font(.body.weight(.medium))
                 Text(note).font(.caption).foregroundStyle(.secondary)
                 Text(status.detail)
-                    .font(status.isRunning ? .body : .caption)
+                    .font(font)
                     .foregroundStyle(tint)
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
@@ -148,7 +149,7 @@ private struct StepRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 20)
                 .overlay(Circle().strokeBorder(.secondary.opacity(0.4)))
-        case .running:
+        case .running, .needsAction:
             ProgressView().controlSize(.small)
         case .done:
             Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
@@ -157,9 +158,15 @@ private struct StepRow: View {
         }
     }
 
+    private var font: Font {
+        if case .needsAction = status { return .title3 }
+        return .caption
+    }
+
     private var tint: Color {
         switch status {
         case .pending, .running: return .secondary
+        case .needsAction: return .orange
         case .done: return .green
         case .failed: return .orange
         }
