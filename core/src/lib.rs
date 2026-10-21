@@ -1,4 +1,5 @@
 pub mod aliasing;
+pub mod blocks;
 pub mod config;
 pub mod firewall;
 pub mod http;
