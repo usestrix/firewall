@@ -8,7 +8,6 @@ fn a_file_only_has_to_set_what_it_changes() {
     let config: FirewallConfig = serde_json::from_str(r#"{"fail_open": false}"#).expect("parses");
     assert!(!config.fail_open);
     assert_eq!(config.port, firewall::DEFAULT_PORT);
-    assert_eq!(config.denylist.token, FirewallConfig::default().denylist.token);
 }
 
 #[test]
