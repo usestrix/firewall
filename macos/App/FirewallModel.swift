@@ -417,17 +417,14 @@ extension FirewallModel: OSSystemExtensionRequestDelegate {
 
     nonisolated func requestNeedsUserApproval(_ request: OSSystemExtensionRequest) {
         Task { @MainActor in
-            // Only MDM can pre-approve a system extension, so take them as close to the switch as a URL can.
+            // macOS shows its own alert that opens System Settings; this says what to do there.
             var instruction = "In System Settings › Privacy & Security, click Allow for StrixFirewall"
-            var pane = "x-apple.systempreferences:com.apple.preference.security"
             if #available(macOS 15, *) {
                 instruction = "In System Settings › General › Login Items & Extensions, click Network Extensions and turn on StrixFirewall"
-                pane = "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.system_extension.network_extension"
             }
             extensionStep = .needsAction(instruction)
             awaitingApproval = true
             log("Waiting for user approval")
-            if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
         }
     }
 
