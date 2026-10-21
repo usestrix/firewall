@@ -6,5 +6,5 @@ uid=$(id -u "$user")
 agent=/Library/LaunchAgents/com.usestrix.firewall.env.plist
 launchctl bootout "gui/$uid" "$agent" 2>/dev/null
 launchctl bootstrap "gui/$uid" "$agent"
-launchctl asuser "$uid" sudo -u "$user" open -a /Applications/Firewall.app --args --install
+launchctl asuser "$uid" sudo -u "$user" open -a "/Applications/Strix Firewall.app" --args --install
 exit 0

@@ -245,7 +245,7 @@ final class FirewallModel: NSObject, ObservableObject {
 
     /// The extension wrote these as root, so the bundled CLI removes them behind an admin prompt; returns what to report if it failed.
     private func removeStoredCA() -> String? {
-        let cli = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/firewall").path
+        let cli = Bundle.main.path(forAuxiliaryExecutable: "firewall") ?? ""
         let script = "do shell script quoted form of \"\(cli)\" & \" uninstall\" with administrator privileges"
         var error: NSDictionary?
         NSAppleScript(source: script)?.executeAndReturnError(&error)

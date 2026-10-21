@@ -87,7 +87,7 @@ targets:
               $([ "$CONFIGURATION" = Debug ] || echo --release)
           done
 
-  Firewall:
+  StrixFirewall:
     type: application
     platform: macOS
     sources:
@@ -97,6 +97,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.usestrix.firewall
+        PRODUCT_NAME: Strix Firewall
     info:
       path: App/Info.plist
       properties:
@@ -127,6 +128,4 @@ targets:
           export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           cd "$SRCROOT/../core"
           cargo build --bin firewall --target aarch64-apple-darwin $([ "$CONFIGURATION" = Debug ] || echo --release)
-          # Not Contents/MacOS: on a case-insensitive disk it would overwrite the app's own Firewall executable.
-          mkdir -p "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
-          cp "target/aarch64-apple-darwin/$CARGO_PROFILE/firewall" "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/"
+          cp "target/aarch64-apple-darwin/$CARGO_PROFILE/firewall" "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/"

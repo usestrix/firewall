@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds and signs Firewall.app, installs it to /Applications, and packages it as build/Firewall.pkg.
+# Builds and signs Strix Firewall.app, installs it to /Applications, and packages it as build/Firewall.pkg.
 # The package is notarized with the notarytool keychain profile in NOTARY_PROFILE; `build.sh debug`
 # makes a Debug build and skips notarization.
 #
@@ -23,8 +23,8 @@ IDENTITY=${IDENTITY:-Developer ID Application}
 INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
-APP=build/Build/Products/$CONFIGURATION/Firewall.app
-EXT=$APP/Contents/Library/SystemExtensions/$EXT_ID.systemextension
+APP="build/Build/Products/$CONFIGURATION/Strix Firewall.app"
+EXT="$APP/Contents/Library/SystemExtensions/$EXT_ID.systemextension"
 PKG_ROOT=build/pkg-root
 
 main() {
@@ -38,7 +38,7 @@ main() {
 build() {
   echo "==> Building"
   xcodegen generate >/dev/null
-  xcodebuild -project Firewall.xcodeproj -scheme Firewall -configuration $CONFIGURATION \
+  xcodebuild -project Firewall.xcodeproj -scheme StrixFirewall -configuration $CONFIGURATION \
     -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" build >/dev/null
 }
@@ -47,7 +47,7 @@ sign() {
   echo "==> Signing with $IDENTITY"
   cp "$(profile_for $APP_ID)" "$APP/Contents/embedded.provisionprofile"
   cp "$(profile_for $EXT_ID)" "$EXT/Contents/embedded.provisionprofile"
-  codesign --force --options runtime --timestamp -s "$IDENTITY" "$APP/Contents/Helpers/firewall"
+  codesign --force --options runtime --timestamp -s "$IDENTITY" "$APP/Contents/MacOS/firewall"
   codesign --force --options runtime --timestamp \
     --entitlements Extension/Extension.entitlements -s "$IDENTITY" "$EXT"
   codesign --force --options runtime --timestamp \
@@ -57,9 +57,9 @@ sign() {
 
 # The extension can only be activated from /Applications.
 install_app() {
-  echo "==> Installing /Applications/Firewall.app"
-  rm -rf /Applications/Firewall.app
-  cp -R "$APP" /Applications/Firewall.app
+  echo "==> Installing /Applications/Strix Firewall.app"
+  rm -rf "/Applications/Strix Firewall.app"
+  cp -R "$APP" "/Applications/Strix Firewall.app"
 }
 
 # Marked non-relocatable so the installer never updates another copy with the same bundle id.
@@ -67,7 +67,7 @@ package() {
   echo "==> Packaging build/Firewall.pkg"
   rm -rf "$PKG_ROOT"
   mkdir -p "$PKG_ROOT/Applications" "$PKG_ROOT/Library/LaunchAgents"
-  cp -R "$APP" "$PKG_ROOT/Applications/Firewall.app"
+  cp -R "$APP" "$PKG_ROOT/Applications/Strix Firewall.app"
   cp LaunchAgents/com.usestrix.firewall.env.plist "$PKG_ROOT/Library/LaunchAgents/"
 
   pkgbuild --analyze --root "$PKG_ROOT" build/components.plist >/dev/null
