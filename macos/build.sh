@@ -13,6 +13,7 @@ export TEAM
 APP_ID=com.usestrix.firewall
 EXT_ID=com.usestrix.firewall.extension
 VERSION=0.1
+# Matched as a substring of the certificate name; set these if more than one certificate matches.
 IDENTITY=${IDENTITY:-Developer ID Application}
 INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
