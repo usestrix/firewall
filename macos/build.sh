@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds and signs StrixFirewall.app, installs it to /Applications, and packages it as build/Firewall.pkg.
+# Builds and signs StrixFirewall.app and packages it as build/Firewall.pkg.
 # The package is notarized with the notarytool keychain profile in NOTARY_PROFILE; `build.sh debug`
 # makes a Debug build and skips notarization.
 #
@@ -39,7 +39,6 @@ PKG_ROOT=build/pkg-root
 main() {
   build
   sign
-  install_app
   package
   [ $CONFIGURATION = Debug ] || notarize
 }
@@ -62,13 +61,6 @@ sign() {
   codesign --force --options runtime --timestamp \
     --entitlements App/App.entitlements -s "$IDENTITY" "$APP"
   codesign --verify --deep --strict "$APP"
-}
-
-# The extension can only be activated from /Applications.
-install_app() {
-  echo "==> Installing /Applications/StrixFirewall.app"
-  rm -rf /Applications/StrixFirewall.app
-  cp -R "$APP" /Applications/StrixFirewall.app
 }
 
 # Marked non-relocatable so the installer never updates another copy with the same bundle id.
