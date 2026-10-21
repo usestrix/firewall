@@ -25,13 +25,11 @@ enum StepStatus: Equatable {
 
 enum InstallerError: Error, LocalizedError {
     case extensionUnavailable
-    case extensionRefused(String)
     case screeningDidNotStart(NEVPNStatus)
 
     var errorDescription: String? {
         switch self {
         case .extensionUnavailable: return "The extension is not running"
-        case let .extensionRefused(reply): return "The extension replied \(reply)"
         case let .screeningDidNotStart(status): return "Screening did not start (\(status.label))"
         }
     }
@@ -124,9 +122,9 @@ final class InstallerModel: NSObject, ObservableObject {
             log("Uninstall cancelled")
             return
         }
-        // The extension owns the private key, so ask it before tearing down the session that carries the request.
-        let strandedKey = await removeStoredCA()
+        // Stop screening first so the extension cannot mint a fresh CA after it is removed.
         await removeConfiguration()
+        let strandedKey = removeStoredCA()
         await deactivate()
         if let strandedKey { trustStep = .failed(strandedKey) }
 
@@ -245,17 +243,26 @@ final class InstallerModel: NSObject, ObservableObject {
         return true
     }
 
-    /// Only root can delete the key, so the extension does it; returns what to report if it survived.
-    private func removeStoredCA() async -> String? {
-        do {
-            let reply = try await providerMessage("uninstall")
-            guard reply == "ok" else { throw InstallerError.extensionRefused(reply) }
-            log("Removed the CA, its exported copy and the env agent")
-            return nil
-        } catch {
-            log("Could not remove the CA: \(error.localizedDescription)")
+    /// The extension wrote these as root, so deleting them needs an admin prompt; returns what to report if it failed.
+    private func removeStoredCA() -> String? {
+        let keychain = "/Library/Keychains/System.keychain"
+        let service = FirewallIDs.appBundleID
+        let commands = [
+            "security find-certificate -a -Z -c '\(FirewallIDs.caCommonName)' \(keychain) | sed -n 's/^SHA-256 hash: //p' "
+                + "| while read hash; do security delete-certificate -Z $hash \(keychain); done",
+            "security delete-generic-password -s \(service) -a ca \(keychain)",
+            "security delete-generic-password -s \(service) -a enclave-key \(keychain)",
+            "rm -rf '/Library/Application Support/Firewall' /Library/LaunchAgents/\(service).env.plist",
+        ]
+        let script = "do shell script \"\(commands.joined(separator: "; "))\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: script)?.executeAndReturnError(&error)
+        if let error {
+            log("Could not remove the CA: \(error[NSAppleScript.errorMessage] ?? error)")
             return "The CA private key is still in the System keychain"
         }
+        log("Removed the CA, its exported copy and the env agent")
+        return nil
     }
 
     // MARK: - System extension
