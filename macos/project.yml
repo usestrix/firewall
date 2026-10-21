@@ -55,7 +55,7 @@ targets:
         com.apple.application-identifier: ${TEAM}.com.usestrix.firewall.extension
         com.apple.developer.team-identifier: ${TEAM}
         com.apple.developer.networking.networkextension:
-          - app-proxy-provider-systemextension
+          - ${NE_PROVIDER}
         # NE requires NEMachServiceName to start with one of these.
         com.apple.security.application-groups:
           - ${TEAM}.com.usestrix.firewall
@@ -111,7 +111,7 @@ targets:
         com.apple.developer.team-identifier: ${TEAM}
         com.apple.developer.system-extension.install: true
         com.apple.developer.networking.networkextension:
-          - app-proxy-provider-systemextension
+          - ${NE_PROVIDER}
         com.apple.security.network.client: true
     dependencies:
       - target: Extension
