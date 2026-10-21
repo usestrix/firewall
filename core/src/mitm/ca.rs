@@ -60,10 +60,12 @@ pub fn crl(hosts: &[&str], signer: &dyn SigningKey) -> Result<Vec<u8>, BoxError>
     Ok(list.signed_by(&Issuer::from_params(&ca, signer))?.der().to_vec())
 }
 
+pub const COMMON_NAME: &str = "Strix Firewall";
+
 /// Also used by the issuer, whose issuer name must match the CA's subject.
 pub fn params(hosts: &[&str]) -> CertificateParams {
     let mut name = DistinguishedName::new();
-    name.push(DnType::CommonName, "Strix Firewall");
+    name.push(DnType::CommonName, COMMON_NAME);
     name.push(DnType::OrganizationName, "Strix");
 
     let mut params = CertificateParams::default();
