@@ -10,11 +10,9 @@ struct ContentView: View {
             Divider()
             steps
             Divider()
-            transcript
-            Divider()
             footer
         }
-        .frame(width: 540, height: 560)
+        .frame(width: 540)
         .task { await model.refresh() }
         .onAppear(perform: recenterIfOffscreen)
         .onChange(of: model.completed) { done in
@@ -70,27 +68,6 @@ struct ContentView: View {
                     status: model.trustStep)
         }
         .padding(20)
-    }
-
-    private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(model.transcript.indices, id: \.self) { line in
-                        Text(model.transcript[line])
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(line)
-                    }
-                }
-                .padding(12)
-            }
-            .onChange(of: model.transcript.count) { count in
-                proxy.scrollTo(count - 1)
-            }
-        }
-        .frame(maxHeight: .infinity)
     }
 
     private var footer: some View {

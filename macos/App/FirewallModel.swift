@@ -50,7 +50,6 @@ final class FirewallModel: NSObject, ObservableObject {
     @Published private(set) var awaitingApproval = false
     @Published private(set) var completed = false
     @Published private(set) var removed = false
-    @Published private(set) var transcript: [String] = []
     @Published private(set) var screening = false
 
     private let logger = Logger(subsystem: FirewallIDs.appBundleID, category: "installer")
@@ -403,7 +402,6 @@ final class FirewallModel: NSObject, ObservableObject {
     }
 
     private func log(_ line: String) {
-        transcript.append("\(Date().formatted(date: .omitted, time: .standard))  \(line)")
         logger.info("\(line, privacy: .public)")
     }
 }
