@@ -1,6 +1,6 @@
 name: Firewall
 options:
-  bundleIdPrefix: ai.strix.firewall
+  bundleIdPrefix: com.usestrix.firewall
   deploymentTarget: { macOS: "13.0" }
   createIntermediateGroups: true
 
@@ -33,8 +33,8 @@ targets:
     sources: [Extension]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.strix.firewall.extension
-        PRODUCT_NAME: ai.strix.firewall.extension
+        PRODUCT_BUNDLE_IDENTIFIER: com.usestrix.firewall.extension
+        PRODUCT_NAME: com.usestrix.firewall.extension
         PRODUCT_MODULE_NAME: Extension
         OTHER_LDFLAGS: [-lfirewall, -framework, NetworkExtension, -lz]
     info:
@@ -44,7 +44,7 @@ targets:
         CFBundleShortVersionString: "0.1"
         NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
         NetworkExtension:
-          NEMachServiceName: ${TEAM}.ai.strix.firewall.extension
+          NEMachServiceName: ${TEAM}.com.usestrix.firewall.extension
           NEProviderClasses:
             com.apple.networkextension.app-proxy: RamaAppleNetworkExtension.RamaTransparentProxyProvider
     entitlements:
@@ -52,13 +52,13 @@ targets:
       properties:
         # Xcode injects these from the profile; we sign by hand, and NE's IPC
         # check rejects a caller without them.
-        com.apple.application-identifier: ${TEAM}.ai.strix.firewall.extension
+        com.apple.application-identifier: ${TEAM}.com.usestrix.firewall.extension
         com.apple.developer.team-identifier: ${TEAM}
         com.apple.developer.networking.networkextension:
           - app-proxy-provider
         # NE requires NEMachServiceName to start with one of these.
         com.apple.security.application-groups:
-          - ${TEAM}.ai.strix.firewall
+          - ${TEAM}.com.usestrix.firewall
         com.apple.security.network.client: true
         com.apple.security.network.server: true
     dependencies:
@@ -96,7 +96,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.strix.firewall
+        PRODUCT_BUNDLE_IDENTIFIER: com.usestrix.firewall
     info:
       path: Installer/Info.plist
       properties:
@@ -107,7 +107,7 @@ targets:
     entitlements:
       path: Installer/Installer.entitlements
       properties:
-        com.apple.application-identifier: ${TEAM}.ai.strix.firewall
+        com.apple.application-identifier: ${TEAM}.com.usestrix.firewall
         com.apple.developer.team-identifier: ${TEAM}
         com.apple.developer.system-extension.install: true
         com.apple.developer.networking.networkextension:
