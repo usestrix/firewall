@@ -6,17 +6,17 @@ It covers npm, pnpm, bun, pip, uv, pipenv, pdm, cargo, gem and go.
 
 ## Install
 
-**Command-line tool** (macOS, Linux, Windows):
+There are no prebuilt releases yet; build from a clone of this repository.
+
+**Command-line tool** (macOS, Linux):
 
 ```sh
-brew install usestrix/tap/strix-firewall
-# or
-cargo install strix-firewall
+cargo install --path core
 ```
 
-**Whole-machine firewall** (macOS on Apple Silicon, macOS 13 or later):
+**Whole-machine firewall** (macOS 13 or later on Apple Silicon):
 
-1. Download `Firewall.pkg` from the [latest release](https://github.com/usestrix/firewall/releases/latest) and open it.
+1. Build `Firewall.pkg` (see [Building the macOS app](#building-the-macos-app)) and open it.
 2. Open **Firewall** from Applications and click **Install**.
 3. Approve the system extension and admin prompts when macOS asks.
 
@@ -38,13 +38,9 @@ alias npm='firewall npm'
 
 The whole-machine firewall needs no setup: it checks downloads from every process.
 
-## Build from source
+## Building the macOS app
 
-```sh
-cd core && cargo run --bin firewall -- npm install left-pad
-```
-
-The macOS app needs [XcodeGen](https://github.com/yonaskolb/XcodeGen), a Developer ID certificate, and Developer ID profiles for `com.usestrix.firewall` and `com.usestrix.firewall.extension`:
+It needs [XcodeGen](https://github.com/yonaskolb/XcodeGen), a Developer ID certificate, and Developer ID profiles for `com.usestrix.firewall` and `com.usestrix.firewall.extension`:
 
 ```sh
 echo TEAM=<Apple team ID> > macos/.env
