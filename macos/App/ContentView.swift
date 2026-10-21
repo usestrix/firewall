@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var model: FirewallModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showingCommandLine = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -15,6 +16,7 @@ struct ContentView: View {
             footer
         }
         .frame(width: 540, height: 560)
+        .sheet(isPresented: $showingCommandLine) { CommandLineSetup() }
         .task { await model.refresh() }
         .onAppear(perform: recenterIfOffscreen)
         .onChange(of: model.completed) { done in
@@ -105,6 +107,7 @@ struct ContentView: View {
                     .font(.callout)
             }
             Spacer()
+            Button("Use Without Extension…") { showingCommandLine = true }
             Button("Uninstall") { Task { await model.uninstall() } }
                 .disabled(model.busy)
             Button("Install") { Task { await model.install() } }
@@ -112,6 +115,44 @@ struct ContentView: View {
                 .disabled(model.busy || model.completed)
         }
         .padding(16)
+    }
+}
+
+private struct CommandLineSetup: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private static let lines = """
+    export PATH="\(Bundle.main.executableURL!.deletingLastPathComponent().path):$PATH"
+    alias npm='firewall npm'
+    """
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Use Firewall without the extension").font(.title3.weight(.semibold))
+            Text("Installs you run through the firewall command are screened without a system extension or certificate. Nothing else is screened.")
+            Text("Add these lines to ~/.zshrc, then open a new terminal:")
+            Text(Self.lines)
+                .font(.system(.callout, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            Text("npm install is then screened. Prefix other package managers with firewall, as in firewall pip install requests; firewall --help lists them.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            HStack {
+                Spacer()
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(Self.lines, forType: .string)
+                }
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(20)
+        .frame(width: 480)
     }
 }
 
