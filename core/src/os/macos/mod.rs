@@ -1,5 +1,8 @@
 mod enclave;
 mod install;
+mod uninstall;
+
+pub use uninstall::uninstall;
 
 use crate::config::FirewallConfig;
 use crate::{mitm, telemetry};

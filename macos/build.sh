@@ -56,6 +56,7 @@ sign() {
   echo "==> Signing with $IDENTITY"
   cp "$(profile_for $APP_ID)" "$APP/Contents/embedded.provisionprofile"
   cp "$(profile_for $EXT_ID)" "$EXT/Contents/embedded.provisionprofile"
+  codesign --force --options runtime --timestamp -s "$IDENTITY" "$APP/Contents/MacOS/firewall"
   codesign --force --options runtime --timestamp \
     --entitlements Extension/Extension.entitlements -s "$IDENTITY" "$EXT"
   codesign --force --options runtime --timestamp \

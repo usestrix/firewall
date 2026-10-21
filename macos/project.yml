@@ -117,3 +117,14 @@ targets:
       - target: Extension
         embed: true
         codeSign: true
+    # Uninstall runs the CLI as root to remove what the extension left.
+    postBuildScripts:
+      - name: Embed the CLI
+        basedOnDependencyAnalysis: false
+        script: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          unset CC CXX CFLAGS CXXFLAGS
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          cd "$SRCROOT/../core"
+          cargo build --bin firewall --target aarch64-apple-darwin $([ "$CONFIGURATION" = Debug ] || echo --release)
+          cp "target/aarch64-apple-darwin/$CARGO_PROFILE/firewall" "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/"
