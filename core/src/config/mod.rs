@@ -59,8 +59,8 @@ impl Default for FirewallConfig {
 impl Default for DenylistSource {
     fn default() -> Self {
         DenylistSource {
-            base: "https://raw.githubusercontent.com/usestrix/malicious-packages/packages".into(),
-            revision: "https://api.github.com/repos/usestrix/malicious-packages/commits/packages"
+            base: "https://raw.githubusercontent.com/usestrix/firewall-blocklist/main".into(),
+            revision: "https://api.github.com/repos/usestrix/firewall-blocklist/commits/main"
                 .into(),
             poll_secs: 10,
         }
