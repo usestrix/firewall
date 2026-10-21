@@ -1,4 +1,5 @@
 use crate::config::FirewallConfig;
+use crate::policies::filters::age::Age;
 use crate::policies::filters::denylist::Denylist;
 use crate::policies::filters::osv::Osv;
 use crate::policies::filters::Filter;
@@ -27,7 +28,10 @@ impl Firewall {
         }
         let ecosystems = config.registries.iter().map(|r| r.osv_name);
         let denylist = Denylist::new(config.denylist.clone(), config.denylist.token(), ecosystems);
-        let filters: Vec<Box<dyn Filter>> = vec![Box::new(denylist), Box::new(Osv)];
+        let mut filters: Vec<Box<dyn Filter>> = vec![Box::new(denylist), Box::new(Osv)];
+        if config.min_age_hours > 0 {
+            filters.push(Box::new(Age::new(config.min_age_hours)));
+        }
         Firewall { config, patterns, filters }
     }
 

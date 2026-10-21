@@ -1,4 +1,4 @@
-use super::{Pattern, Registry};
+use super::{Pattern, Published, Registry};
 
 const FILES: (&str, &str) = ("https://files.pythonhosted.org/", "/pypi-files/");
 
@@ -13,6 +13,7 @@ pub static PYPI: Registry = Registry {
         Pattern { re: r"^simple/(?<name>[^/]+)", rewrite: Some(FILES) },
         Pattern { re: "", rewrite: Some(FILES) },
     ],
+    published: None,
 };
 
 /// The directories are hash shards, but the filename names the distribution.
@@ -35,6 +36,11 @@ pub static PYPI_FILES: Registry = Registry {
             rewrite: None,
         },
     ],
+    published: Some(Published {
+        url: "https://pypi.org/pypi/{name}/{version}/json",
+        pointer: "/urls/0/upload_time_iso_8601",
+        escape: None,
+    }),
 };
 
 /// PEP 503: runs of - _ and . collapse to one -, lowercased, which also un-escapes a wheel.

@@ -1,3 +1,4 @@
+pub mod age;
 pub mod denylist;
 pub mod osv;
 
@@ -5,6 +6,9 @@ use super::registries::{Package, Registry};
 use crate::Firewall;
 use std::future::Future;
 use std::pin::Pin;
+
+/// Some registry APIs turn away requests without a user agent.
+const AGENT: &str = "strix-firewall";
 
 pub type VerdictFuture<'a> = Pin<Box<dyn Future<Output = Verdict> + Send + 'a>>;
 

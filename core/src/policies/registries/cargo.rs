@@ -1,4 +1,4 @@
-use super::{Pattern, Registry};
+use super::{Pattern, Published, Registry};
 
 pub static CARGO_INDEX: Registry = Registry {
     prefix: "/cargo/index/",
@@ -16,6 +16,7 @@ pub static CARGO_INDEX: Registry = Registry {
         // Sparse index paths shard by name: le/ft/left-pad, 3/s/syn, 2/cc.
         Pattern { re: r"(?<name>[^/]+)$", rewrite: None },
     ],
+    published: None,
 };
 
 pub static CARGO_DL: Registry = Registry {
@@ -26,6 +27,11 @@ pub static CARGO_DL: Registry = Registry {
     index: false,
     normalize: None,
     patterns: &[Pattern { re: r"^(?<name>[^/]+)/(?<version>[^/]+)", rewrite: None }],
+    published: Some(Published {
+        url: "https://crates.io/api/v1/crates/{name}/{version}",
+        pointer: "/version/created_at",
+        escape: None,
+    }),
 };
 
 /// `cargo add` resolves versions here, named by config.json's "api" field.
@@ -37,4 +43,5 @@ pub static CRATES_API: Registry = Registry {
     index: false,
     normalize: None,
     patterns: &[],
+    published: None,
 };

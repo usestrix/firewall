@@ -1,4 +1,4 @@
-use super::{Pattern, Registry};
+use super::{Pattern, Published, Registry};
 
 pub static NPM: Registry = Registry {
     prefix: "/npm/",
@@ -18,4 +18,9 @@ pub static NPM: Registry = Registry {
             rewrite: Some(("https://registry.npmjs.org/", "/npm/")),
         },
     ],
+    published: Some(Published {
+        url: "https://registry.npmjs.org/{name}",
+        pointer: "/time/{version}",
+        escape: None,
+    }),
 };
