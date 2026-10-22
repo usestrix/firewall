@@ -27,6 +27,13 @@ impl CaKey {
         }
     }
 
+    pub(super) fn delete_machine_key() -> Result<(), BoxError> {
+        if let Some(key) = open_key(KEY_NAME, NCRYPT_MACHINE_KEY_FLAG)? {
+            key.delete_from_tpm()?;
+        }
+        Ok(())
+    }
+
     /// A per-user key under a random name, which needs no elevation; `delete_from_tpm` it after.
     pub fn create_test_key() -> WinResult<Self> {
         let name = format!("Strix Firewall test {:016x}", rand::random::<u64>());
