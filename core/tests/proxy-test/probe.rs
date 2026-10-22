@@ -1,4 +1,5 @@
 use firewall::aliasing::{self, Invocation, Manager, CARGO, GEM, GO, NPM, PIP, PIP3, UV};
+use firewall::FirewallConfig;
 use std::path::PathBuf;
 
 struct Probe {
@@ -29,14 +30,14 @@ static PROBES: &[Probe] = &[
     },
 ];
 
-pub fn all(port: u16) -> Vec<(&'static str, Outcome)> {
-    PROBES.iter().map(|probe| (probe.manager.command, run(probe, port))).collect()
+pub fn all(port: u16, config: &FirewallConfig) -> Vec<(&'static str, Outcome)> {
+    PROBES.iter().map(|probe| (probe.manager.command, run(probe, port, config))).collect()
 }
 
-fn run(probe: &Probe, port: u16) -> Outcome {
+fn run(probe: &Probe, port: u16, config: &FirewallConfig) -> Outcome {
     let args = probe.args.iter().map(|arg| arg.to_string()).collect();
     let dir = probe.setup.and_then(|prepare| prepare());
-    match aliasing::run(port, &Invocation::new(probe.manager.command.into(), args), dir.as_deref()) {
+    match aliasing::run(port, config, &Invocation::new(probe.manager.command.into(), args), dir.as_deref()) {
         Ok(0) => Outcome::Ok,
         Ok(_) => Outcome::Failed,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Outcome::Absent,

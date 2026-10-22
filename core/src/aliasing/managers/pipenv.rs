@@ -10,7 +10,7 @@ pub static PIPENV: Manager = Manager {
         ("https_proxy", PROXY),
         ("PIPENV_PYPI_MIRROR", PYPI_SIMPLE),
         // pipenv installs through pip, which skips a plaintext index on a host it doesn't trust.
-        ("PIP_TRUSTED_HOST", "pypi.org files.pythonhosted.org"),
+        ("PIP_TRUSTED_HOST", "{host:pypi} {host:pypi-files}"),
     ],
     args: &[],
 };

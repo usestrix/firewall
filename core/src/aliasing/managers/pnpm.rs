@@ -6,7 +6,7 @@ pub static PNPM: Manager = Manager {
     env: &[
         ("pnpm_config_proxy", PROXY),
         ("pnpm_config_https_proxy", PROXY),
-        ("pnpm_config_registry", "http://registry.npmjs.org/"),
+        ("pnpm_config_registry", "http://{npm}/"),
     ],
     args: &[],
 };
