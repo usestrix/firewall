@@ -127,5 +127,5 @@ targets:
           unset CC CXX CFLAGS CXXFLAGS
           export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           cd "$SRCROOT/../core"
-          cargo build --bin firewall-uninstall --target aarch64-apple-darwin $([ "$CONFIGURATION" = Debug ] || echo --release)
+          cargo build --bin firewall-uninstall --features machine-wide --target aarch64-apple-darwin $([ "$CONFIGURATION" = Debug ] || echo --release)
           cp "target/aarch64-apple-darwin/$CARGO_PROFILE/firewall-uninstall" "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/"

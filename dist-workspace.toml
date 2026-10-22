@@ -7,6 +7,7 @@ ci = "github"
 installers = ["shell", "powershell", "homebrew", "msi"]
 # core/wix/main.wxs is edited to install the service.
 allow-dirty = ["msi"]
+features = ["machine-wide"]
 tap = "usestrix/homebrew-tap"
 publish-jobs = ["homebrew", "./publish-crates"]
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
