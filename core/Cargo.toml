@@ -53,6 +53,10 @@ name = "mitm"
 path = "tests/mitm.rs"
 
 [[test]]
+name = "tpm"
+path = "tests/tpm.rs"
+
+[[test]]
 name = "managers"
 path = "tests/managers.rs"
 
@@ -78,6 +82,9 @@ core-foundation = "0.10.1"
 rama = { version = "0.4.0", features = ["net-apple-networkextension"] }
 security-framework = "3.7.0"
 security-framework-sys = "2.17.0"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
 
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
