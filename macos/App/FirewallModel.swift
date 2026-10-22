@@ -29,11 +29,13 @@ enum FirewallError: Error, LocalizedError {
     case extensionUnavailable
     case screeningDidNotStart(NEVPNStatus)
     case extensionStopped(String)
+    case extensionRefused(String)
 
     var errorDescription: String? {
         switch self {
         case .extensionUnavailable: return "The extension is not running"
         case let .screeningDidNotStart(status): return "Screening did not start (\(status.label))"
+        case let .extensionRefused(reply): return "The extension replied \(reply)"
         case let .extensionStopped(reason):
             return "The extension stopped: \(reason). Its log: log show --last 5m --predicate 'subsystem BEGINSWITH \"\(FirewallIDs.appBundleID)\"'"
         }
@@ -201,6 +203,28 @@ final class FirewallModel: NSObject, ObservableObject {
         if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
     }
 
+    /// Allowing a version writes it into the extension's config, which a restart then loads.
+    func trust(_ package: BlockedPackage) async {
+        guard package.trustable else { return }
+        guard AdminAuthorization.confirm() else {
+            log("Trust cancelled for \(package.label)")
+            return
+        }
+        do {
+            var request = ["eco": package.eco, "name": package.name]
+            request["version"] = package.version
+            let json = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+            let reply = try await providerMessage("allow \(json)")
+            guard reply == "ok" else { throw FirewallError.extensionRefused(reply) }
+            blocked.removeAll { $0 == package }
+            log("Trusted \(package.label) (\(package.eco))")
+        } catch {
+            log("Could not trust \(package.label): \(error.localizedDescription)")
+            return
+        }
+        await restart()
+    }
+
     /// The extension cannot message the app, so the app asks it for blocks.
     private func watchBlocks() async {
         while true {
@@ -208,7 +232,7 @@ final class FirewallModel: NSObject, ObservableObject {
                let packages = try? JSONDecoder().decode([BlockedPackage].self, from: Data(reply.utf8)) {
                 for package in packages where !blocked.contains(package) {
                     blocked.append(package)
-                    BlockAlert.show(package)
+                    if BlockAlert.show(package) { await trust(package) }
                 }
                 blocked = Array(blocked.suffix(10))
             }

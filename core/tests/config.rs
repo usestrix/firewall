@@ -57,3 +57,18 @@ async fn failing_closed_blocks_what_could_not_be_checked() {
     let blocked = screen(url, &firewall).await.unwrap_or_default();
     assert!(blocked.contains("could not be checked"), "{blocked:?}");
 }
+
+#[test]
+fn allowing_keeps_the_rest_of_the_file() {
+    let path = std::env::temp_dir().join(format!("firewall-allow-{}.json", std::process::id()));
+    std::fs::write(&path, r#"{"fail_open": false}"#).expect("write");
+    for _ in 0..2 {
+        firewall::config::allow(&path, "npm", "left-pad", Some("1.3.0")).expect("allow");
+    }
+    let text = std::fs::read_to_string(&path).expect("read");
+    std::fs::remove_file(&path).ok();
+    let config: FirewallConfig = serde_json::from_str(&text).expect("parses");
+    assert!(!config.fail_open);
+    assert_eq!(config.allow["npm"].len(), 1);
+    assert_eq!(config.allow["npm"][0].version.as_deref(), Some("1.3.0"));
+}

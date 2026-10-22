@@ -1,10 +1,10 @@
 use crate::policies::registries::{Registry, BUILT_IN};
 use directories::ProjectDirs;
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const DEFAULT_PORT: u16 = 8080;
 
@@ -128,4 +128,32 @@ fn merge(base: &mut Map<String, Value>, top: Map<String, Value>) {
             }
         }
     }
+}
+
+/// Adds an `allow` entry to the file, leaving the rest of it as written.
+pub fn allow(path: &Path, eco: &str, name: &str, version: Option<&str>) -> std::io::Result<()> {
+    let invalid = |e: String| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
+    let mut config = match std::fs::read_to_string(path) {
+        Ok(text) => serde_json::from_str(&text).map_err(|e| invalid(e.to_string()))?,
+        Err(e) if e.kind() == ErrorKind::NotFound => json!({}),
+        Err(e) => return Err(e),
+    };
+    if !config.is_object() {
+        return Err(invalid("not an object".into()));
+    }
+    let entry = json!({ "name": name, "version": version });
+    let entries = &mut config["allow"][eco];
+    if entries.is_null() {
+        *entries = Value::Array(Vec::new());
+    }
+    let Some(entries) = entries.as_array_mut() else {
+        return Err(invalid(format!("allow.{eco} is not a list")));
+    };
+    if !entries.contains(&entry) {
+        entries.push(entry);
+    }
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, serde_json::to_string_pretty(&config)?)
 }
