@@ -43,6 +43,8 @@ it can sign nothing else. Its private key never leaves the hardware.
 - Without a TPM, the service cannot start, so the MSI fails rather than falling back to a
   software key.
 - Installing and removing the MSI needs an admin.
+- A notification-area icon shows whether screening is on. Any signed-in user can pause
+  screening from it, until they resume it or the service restarts.
 - The hosts file sends each registry host to a local service. Clients must therefore trust the
   Windows certificate store, or the CA exported to `%ProgramData%\Strix Firewall\ca.pem`.
   - npm, pnpm and bun use the exported CA via `NODE_EXTRA_CA_CERTS`.
