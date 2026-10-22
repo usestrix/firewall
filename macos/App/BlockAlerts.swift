@@ -2,13 +2,13 @@ import AppKit
 import Security
 
 struct BlockedPackage: Codable, Hashable, Identifiable {
+    let id: UInt64
     let eco: String
     let name: String
     let version: String?
     let filter: String
     let reason: String
 
-    var id: String { "\(eco)/\(name)@\(version ?? "")" }
     var label: String { version.map { "\(name) \($0)" } ?? name }
     /// The denylist and OSV only flag packages known to be malicious; the age check only holds back new ones.
     var malicious: Bool { filter != "age" }
@@ -16,10 +16,15 @@ struct BlockedPackage: Codable, Hashable, Identifiable {
     var trustable: Bool { !malicious && version != nil }
 }
 
+enum Allowance {
+    /// For a minute, so the rest of that install can fetch it too.
+    case once
+    case always
+}
+
 @MainActor
 enum BlockAlert {
-    /// Returns whether the user chose to trust the package.
-    static func show(_ package: BlockedPackage) -> Bool {
+    static func show(_ package: BlockedPackage) -> Allowance? {
         let alert = NSAlert()
         alert.addButton(withTitle: "OK")
         if package.malicious {
@@ -31,10 +36,25 @@ enum BlockAlert {
         } else {
             alert.messageText = "Held back a new package"
             alert.informativeText = "\(package.label) (\(package.eco)) \(package.reason)."
-            if package.trustable { alert.addButton(withTitle: "Trust this version") }
+            if package.trustable {
+                alert.addButton(withTitle: "Allow Once")
+                alert.addButton(withTitle: "Trust this version")
+            }
         }
         NSApp.activate(ignoringOtherApps: true)
-        return alert.runModal() == .alertSecondButtonReturn
+        switch alert.runModal() {
+        case .alertSecondButtonReturn: return .once
+        case .alertThirdButtonReturn: return .always
+        default: return nil
+        }
+    }
+
+    static func late(_ package: BlockedPackage, _ allowance: Allowance) {
+        let alert = NSAlert()
+        alert.messageText = allowance == .once ? "Allowed \(package.label) for the next minute" : "Trusted \(package.label)"
+        alert.informativeText = "The install had already stopped waiting for it. Run it again to finish."
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 }
 
