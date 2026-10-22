@@ -141,7 +141,7 @@ fn on_click(window: HWND) {
             if screening { "Pause" } else { "Resume" },
         ),
         (control, MENU_RESTART, "Restart"),
-        (MF_STRING, MENU_LOG, "Open log"),
+        (MF_STRING, MENU_LOG, "Open logs"),
         (MF_SEPARATOR, 0, ""),
         (MF_STRING, MENU_QUIT, "Quit"),
     ];
@@ -160,7 +160,7 @@ fn on_click(window: HWND) {
             start_and_wait(&service)
         },
         MENU_LOG => {
-            let log = HSTRING::from(data_dir().join("firewall.log").as_path());
+            let log = HSTRING::from(data_dir().as_path());
             let none = PCWSTR::null();
             unsafe { ShellExecuteW(Some(window), w!("open"), &log, none, none, SW_SHOWNORMAL) };
             return;
