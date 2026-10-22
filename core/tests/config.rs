@@ -7,12 +7,34 @@ use firewall::{Firewall, FirewallConfig};
 fn a_file_only_has_to_set_what_it_changes() {
     let config: FirewallConfig = serde_json::from_str(r#"{"fail_open": false}"#).expect("parses");
     assert!(!config.fail_open);
-    assert_eq!(config.port, firewall::DEFAULT_PORT);
+    assert_eq!(config.port.get(), firewall::DEFAULT_PORT);
 }
 
 #[test]
 fn a_misspelled_setting_is_an_error() {
     assert!(serde_json::from_str::<FirewallConfig>(r#"{"fail-open": false}"#).is_err());
+}
+
+#[test]
+fn nonsense_values_are_errors() {
+    let file = std::env::temp_dir().join(format!("firewall-nonsense-{}.json", std::process::id()));
+    for bad in [
+        r#"{"allow": {"nmp": [{"name": "left-pad"}]}}"#,
+        r#"{"denylist": {"poll_secs": 0}}"#,
+        r#"{"denylist": {"base": "raw.githubusercontent.com/usestrix"}}"#,
+        r#"{"denylist": {"revision": "https://"}}"#,
+        r#"{"port": 0}"#,
+        r#"{"min_age_hours": 18446744073709551615}"#,
+        r#"{"registries": {"npm": ["http://npm.example.com/"]}}"#,
+        r#"{"registries": {"npm": ["https://npm.example.com"]}}"#,
+        r#"{"registries": {"npm": ["https://npm.example.com:8443/"]}}"#,
+        r#"{"registries": {"npm": ["https://user@npm.example.com/"]}}"#,
+        r#"{"registries": {"npm": ["https://npm.example.com/?a=/"]}}"#,
+    ] {
+        std::fs::write(&file, bad).expect("write");
+        assert!(FirewallConfig::load_from(std::slice::from_ref(&file)).is_err(), "{bad}");
+    }
+    std::fs::remove_file(&file).ok();
 }
 
 #[test]

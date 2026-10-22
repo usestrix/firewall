@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tracing::{info, info_span, warn, Instrument};
 
 pub fn serve(config: FirewallConfig) -> std::io::Result<()> {
-    let bound = std::net::TcpListener::bind(("127.0.0.1", config.port))?;
+    let bound = std::net::TcpListener::bind(("127.0.0.1", config.port.get()))?;
     bound.set_nonblocking(true)?;
     crate::runtime()?.block_on(async move {
         let firewall = Arc::new(Firewall::new(config));
