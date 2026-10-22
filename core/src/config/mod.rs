@@ -1,9 +1,11 @@
-use crate::policies::registries::{Registry, BUILT_IN};
+use crate::policies::registries::{host_of, BUILT_IN};
 use directories::ProjectDirs;
+use rama::net::uri::Uri;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
+use std::num::{NonZeroU16, NonZeroU64};
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_PORT: u16 = 8080;
@@ -11,7 +13,7 @@ pub const DEFAULT_PORT: u16 = 8080;
 #[derive(Debug, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FirewallConfig {
-    pub port: u16,
+    pub port: NonZeroU16,
     /// Allow a package when a filter could not check it.
     pub fail_open: bool,
     /// 0 turns the age check off.
@@ -20,9 +22,8 @@ pub struct FirewallConfig {
     /// Packages exempt from the age check, by ecosystem: `{"npm": [{"name": "left-pad"}]}`.
     pub allow: HashMap<String, Vec<AllowedPackage>>,
     pub telemetry: bool,
-    /// Not describable in the file yet, so this is always the built-in table.
-    #[serde(skip)]
-    pub registries: Vec<&'static Registry>,
+    /// Mirrors laid out like a built-in registry, by its name: `{"npm": ["https://npm.example.com/"]}`.
+    pub registries: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -40,19 +41,19 @@ pub struct DenylistSource {
     pub base: String,
     /// Polled for a new commit, which re-fetches every list in use.
     pub revision: String,
-    pub poll_secs: u64,
+    pub poll_secs: NonZeroU64,
 }
 
 impl Default for FirewallConfig {
     fn default() -> Self {
         FirewallConfig {
-            port: DEFAULT_PORT,
+            port: NonZeroU16::new(DEFAULT_PORT).unwrap(),
             fail_open: true,
             min_age_hours: 24,
             denylist: DenylistSource::default(),
             allow: HashMap::new(),
             telemetry: true,
-            registries: BUILT_IN.to_vec(),
+            registries: HashMap::new(),
         }
     }
 }
@@ -63,7 +64,7 @@ impl Default for DenylistSource {
             base: "https://raw.githubusercontent.com/usestrix/firewall-blocklist/main".into(),
             revision: "https://api.github.com/repos/usestrix/firewall-blocklist/commits/main"
                 .into(),
-            poll_secs: 10,
+            poll_secs: NonZeroU64::new(10).unwrap(),
         }
     }
 }
@@ -87,7 +88,8 @@ impl FirewallConfig {
             };
             let invalid = |e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
             let layer: Value = serde_json::from_str(&text).map_err(invalid)?;
-            FirewallConfig::deserialize(&layer).map_err(invalid)?;
+            let config = FirewallConfig::deserialize(&layer).map_err(invalid)?;
+            check(&config).map_err(|e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display())))?;
             let Value::Object(layer) = layer else {
                 unreachable!("a config parses only from an object");
             };
@@ -97,19 +99,7 @@ impl FirewallConfig {
     }
 
     pub fn local_url(&self, path: &str) -> String {
-        crate::local_url(self.port, path)
-    }
-
-    /// Without building a `Firewall`, which needs a runtime.
-    pub fn hosts(&self) -> Vec<&'static str> {
-        let mut hosts: Vec<&'static str> = Vec::new();
-        for registry in &self.registries {
-            let host = registry.host();
-            if !hosts.contains(&host) {
-                hosts.push(host);
-            }
-        }
-        hosts
+        crate::local_url(self.port.get(), path)
     }
 }
 
@@ -156,4 +146,44 @@ pub fn allow(path: &Path, eco: &str, name: &str, version: Option<&str>) -> std::
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(path, serde_json::to_string_pretty(&config)?)
+}
+
+/// What serde's types cannot say.
+fn check(config: &FirewallConfig) -> Result<(), String> {
+    // `Duration::hours` panics past this.
+    if config.min_age_hours > time::Duration::MAX.whole_hours() as u64 {
+        return Err(format!("{} hours is too long", config.min_age_hours));
+    }
+    for eco in config.allow.keys() {
+        if !BUILT_IN.iter().any(|r| r.eco == eco) {
+            return Err(format!("unknown ecosystem {eco:?} in allow"));
+        }
+    }
+    for url in [&config.denylist.base, &config.denylist.revision] {
+        if parse_url(url, &["http", "https"]).is_none() {
+            return Err(format!("{url:?} is not an http(s) URL"));
+        }
+    }
+    for (name, mirrors) in &config.registries {
+        if !BUILT_IN.iter().any(|r| r.name() == name) {
+            return Err(format!("no built-in registry is named {name}"));
+        }
+        if let Some(url) = mirrors.iter().find(|url| !is_mirror(url)) {
+            return Err(format!("{url}: a mirror is an https:// URL ending in /"));
+        }
+    }
+    Ok(())
+}
+
+/// No port or userinfo, as `host_of` is what gets intercepted.
+fn is_mirror(url: &str) -> bool {
+    let Some(uri) = parse_url(url, &["https"]) else { return false };
+    let bare_host = uri.host_str().is_some_and(|host| host == host_of(url));
+    bare_host && uri.query().is_none() && uri.fragment().is_none() && url.ends_with('/')
+}
+
+fn parse_url(url: &str, schemes: &[&str]) -> Option<Uri> {
+    let uri = Uri::parse(url).ok()?;
+    let has_host = uri.host_str().is_some_and(|host| !host.is_empty());
+    (has_host && schemes.contains(&uri.scheme_str()?)).then_some(uri)
 }

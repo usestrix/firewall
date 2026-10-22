@@ -7,12 +7,34 @@ use firewall::{Firewall, FirewallConfig};
 fn a_file_only_has_to_set_what_it_changes() {
     let config: FirewallConfig = serde_json::from_str(r#"{"fail_open": false}"#).expect("parses");
     assert!(!config.fail_open);
-    assert_eq!(config.port, firewall::DEFAULT_PORT);
+    assert_eq!(config.port.get(), firewall::DEFAULT_PORT);
 }
 
 #[test]
 fn a_misspelled_setting_is_an_error() {
     assert!(serde_json::from_str::<FirewallConfig>(r#"{"fail-open": false}"#).is_err());
+}
+
+#[test]
+fn nonsense_values_are_errors() {
+    let file = std::env::temp_dir().join(format!("firewall-nonsense-{}.json", std::process::id()));
+    for bad in [
+        r#"{"allow": {"nmp": [{"name": "left-pad"}]}}"#,
+        r#"{"denylist": {"poll_secs": 0}}"#,
+        r#"{"denylist": {"base": "raw.githubusercontent.com/usestrix"}}"#,
+        r#"{"denylist": {"revision": "https://"}}"#,
+        r#"{"port": 0}"#,
+        r#"{"min_age_hours": 18446744073709551615}"#,
+        r#"{"registries": {"npm": ["http://npm.example.com/"]}}"#,
+        r#"{"registries": {"npm": ["https://npm.example.com"]}}"#,
+        r#"{"registries": {"npm": ["https://npm.example.com:8443/"]}}"#,
+        r#"{"registries": {"npm": ["https://user@npm.example.com/"]}}"#,
+        r#"{"registries": {"npm": ["https://npm.example.com/?a=/"]}}"#,
+    ] {
+        std::fs::write(&file, bad).expect("write");
+        assert!(FirewallConfig::load_from(std::slice::from_ref(&file)).is_err(), "{bad}");
+    }
+    std::fs::remove_file(&file).ok();
 }
 
 #[test]
@@ -36,6 +58,21 @@ fn a_later_file_wins_and_allow_lists_add_up() {
     assert!(!config.fail_open);
     let names: Vec<&str> = config.allow["npm"].iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, ["a", "b"]);
+}
+
+#[tokio::test]
+async fn a_mirror_is_screened_like_the_registry_it_copies() {
+    let config = r#"{"registries": {"npm": ["https://npm.example.com/"]}}"#;
+    let firewall = Firewall::new(serde_json::from_str(config).expect("parses"));
+    assert!(firewall.hosts().contains(&"npm.example.com"));
+    let url = "https://npm.example.com/left-pad/-/left-pad-1.3.0.tgz";
+    let (registry, rest) = firewall.match_on(url, |r| r.upstream).expect("the mirror");
+    assert_eq!(firewall.resolve(registry, rest).pkg.map(|p| p.label()), Some("left-pad@1.3.0".into()));
+    let unknown = std::env::temp_dir().join(format!("firewall-mirror-{}.json", std::process::id()));
+    std::fs::write(&unknown, r#"{"registries": {"nmp": ["https://npm.example.com/"]}}"#).expect("write");
+    let loaded = FirewallConfig::load_from(std::slice::from_ref(&unknown));
+    std::fs::remove_file(&unknown).ok();
+    assert!(loaded.is_err());
 }
 
 #[tokio::test]
