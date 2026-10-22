@@ -23,6 +23,7 @@ use rama::rt::Executor;
 use rama::telemetry::tracing::apple::oslog::{OsLogLayer, Privacy};
 use rama::{Layer, Service};
 use std::convert::Infallible;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -32,6 +33,7 @@ const KEYCHAIN_SERVICE: &str = BUNDLE_ID;
 const KEYCHAIN_ACCOUNT: &str = "ca";
 /// Must match `macos/LaunchAgents/com.usestrix.firewall.env.plist`, which points npm at it.
 const CA_FILE: &str = "/Library/Application Support/Firewall/ca.pem";
+const CONFIG_FILE: &str = "/Library/Application Support/Firewall/config.json";
 
 #[derive(Clone)]
 struct Handler {
@@ -97,10 +99,14 @@ impl TransparentProxyHandlerFactory for Factory {
     }
 }
 
+pub fn system_config() -> Option<PathBuf> {
+    Some(CONFIG_FILE.into())
+}
+
 fn handler(exec: Executor) -> Result<Handler, BoxError> {
     telemetry::set_mode("extension");
     telemetry::heartbeat();
-    let config = FirewallConfig::load().inspect_err(|_| telemetry::error("config"))?;
+    let config = FirewallConfig::load_from(&[CONFIG_FILE.into()]).inspect_err(|_| telemetry::error("config"))?;
     let firewall = Arc::new(Firewall::new(config));
     let hosts = firewall.hosts();
     let key = enclave::EnclaveKey::load_or_create().inspect_err(|_| telemetry::error("enclave"))?;
