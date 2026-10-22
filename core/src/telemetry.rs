@@ -1,3 +1,4 @@
+use crate::platform;
 use crate::policies::Package;
 use crate::{Firewall, FirewallConfig};
 use rama::http::client::EasyHttpWebClient;
@@ -40,7 +41,7 @@ struct Telemetry {
 }
 
 pub fn screened(firewall: &Firewall, url: &str, reason: Option<&str>) {
-    if TELEMETRY.is_none() {
+    if !on() {
         return;
     }
     let Some((registry, rest)) = firewall.match_on(url, |r| r.upstream) else {
@@ -52,6 +53,7 @@ pub fn screened(firewall: &Firewall, url: &str, reason: Option<&str>) {
 }
 
 pub fn screened_package(eco: &str, pkg: &Package, reason: Option<&str>) {
+    platform::record(eco, pkg, reason);
     let mut properties = json!({ "eco": eco, "blocked": reason.is_some() });
     if let Some(reason) = reason {
         properties["package"] = pkg.label().into();
@@ -69,7 +71,7 @@ pub fn error(kind: &'static str) {
 }
 
 pub fn heartbeat() {
-    if TELEMETRY.is_none() {
+    if !on() {
         return;
     }
     tokio::spawn(async {
@@ -81,13 +83,18 @@ pub fn heartbeat() {
 }
 
 pub fn flush() {
-    if TELEMETRY.is_none() {
+    if !on() {
         return;
     }
     match Runtime::try_new() {
         Ok(runtime) => runtime.block_on(send()),
         Err(error) => debug!(%error, "telemetry runtime failed"),
     }
+}
+
+/// PostHog, or the Strix platform when the config names one.
+fn on() -> bool {
+    TELEMETRY.is_some() || platform::on()
 }
 
 fn record(event: &str, mut properties: Value) {
@@ -103,6 +110,7 @@ fn record(event: &str, mut properties: Value) {
 }
 
 pub async fn send() {
+    platform::send().await;
     let Some(telemetry) = &*TELEMETRY else { return };
     let batch = std::mem::take(&mut *telemetry.events.lock().expect("telemetry lock"));
     if batch.is_empty() {
