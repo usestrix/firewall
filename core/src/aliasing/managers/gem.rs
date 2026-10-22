@@ -6,6 +6,6 @@ pub static GEM: Manager = Manager {
     // gem has no variable for the source list, and gem env and gem sources reject the flags.
     args: &[Args {
         when: &["install", "update", "fetch"],
-        flags: &["--clear-sources", "--source", "http://rubygems.org/"],
+        flags: &["--clear-sources", "--source", "http://{gem}/"],
     }],
 };

@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 pub const DEFAULT_PORT: u16 = 8080;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FirewallConfig {
     pub port: NonZeroU16,
@@ -26,7 +26,7 @@ pub struct FirewallConfig {
     pub registries: HashMap<String, Vec<String>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AllowedPackage {
     pub name: String,

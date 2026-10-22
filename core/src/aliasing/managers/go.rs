@@ -6,7 +6,7 @@ pub static GO: Manager = Manager {
     env: &[
         ("HTTP_PROXY", PROXY),
         ("http_proxy", PROXY),
-        ("GOPROXY", "http://proxy.golang.org"),
+        ("GOPROXY", "http://{go}"),
         ("GOSUMDB", "off"),
         ("GOFLAGS", "-mod=mod"),
     ],

@@ -5,7 +5,7 @@ pub static NPM: Manager = Manager {
     env: &[
         ("npm_config_proxy", PROXY),
         ("npm_config_https_proxy", PROXY),
-        ("npm_config_registry", "http://registry.npmjs.org/"),
+        ("npm_config_registry", "http://{npm}/"),
     ],
     args: &[],
 };

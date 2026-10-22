@@ -9,6 +9,9 @@ mod pipenv;
 mod pnpm;
 mod uv;
 
+use crate::policies::registries::{host_of, BUILT_IN};
+use crate::FirewallConfig;
+
 pub use bun::BUN;
 pub use cargo::CARGO;
 pub use gem::GEM;
@@ -20,7 +23,7 @@ pub use pipenv::PIPENV;
 pub use pnpm::PNPM;
 pub use uv::UV;
 
-pub const PYPI_SIMPLE: &str = "http://pypi.org/simple";
+pub const PYPI_SIMPLE: &str = "http://{pypi}/simple";
 
 pub const PROXY: &str = "{proxy}";
 
@@ -31,7 +34,9 @@ pub struct Args {
 }
 
 /// An https:// registry arrives as a CONNECT tunnel naming only the host, so each
-/// manager also overrides its registry URL to http://.
+/// manager also overrides its registry URL to http://. `{npm}` and the like name a
+/// built-in registry, and expand to its first mirror, if any, without the scheme;
+/// `{host:npm}` to just its host.
 pub struct Manager {
     pub command: &'static str,
     pub env: &'static [(&'static str, &'static str)],
@@ -42,23 +47,36 @@ pub static MANAGERS: &[&Manager] =
     &[&NPM, &PIP, &PIP3, &CARGO, &GO, &GEM, &UV, &PDM, &PIPENV, &PNPM, &BUN];
 
 /// Every manager's variables, so whichever the command starts is pointed at the firewall.
-pub fn variables(proxy: &str) -> Vec<(String, String)> {
+pub fn variables(proxy: &str, config: &FirewallConfig) -> Vec<(String, String)> {
     let env = MANAGERS.iter().flat_map(|manager| manager.env);
-    env.map(|(key, value)| (key.to_string(), expand(value, proxy))).collect()
+    env.map(|(key, value)| (key.to_string(), expand(value, proxy, config))).collect()
 }
 
-pub fn arguments(proxy: &str, manager: &Manager, typed: &[String]) -> Vec<String> {
+pub fn arguments(
+    proxy: &str,
+    config: &FirewallConfig,
+    manager: &Manager,
+    typed: &[String],
+) -> Vec<String> {
     let mut out = Vec::new();
     for args in manager.args {
         let wanted =
             args.when.is_empty() || typed.iter().any(|arg| args.when.contains(&arg.as_str()));
         if wanted {
-            out.extend(args.flags.iter().map(|flag| expand(flag, proxy)));
+            out.extend(args.flags.iter().map(|flag| expand(flag, proxy, config)));
         }
     }
     out
 }
 
-fn expand(value: &str, proxy: &str) -> String {
-    value.replace(PROXY, proxy)
+fn expand(value: &str, proxy: &str, config: &FirewallConfig) -> String {
+    let mut value = value.replace(PROXY, proxy);
+    for registry in BUILT_IN {
+        let mirror = config.registries.get(registry.name()).and_then(|mirrors| mirrors.first());
+        let upstream = mirror.map_or(registry.upstream, String::as_str);
+        let address = upstream.trim_start_matches("https://").trim_end_matches('/');
+        value = value.replace(&format!("{{{}}}", registry.name()), address);
+        value = value.replace(&format!("{{host:{}}}", registry.name()), host_of(upstream));
+    }
+    value
 }

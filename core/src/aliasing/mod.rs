@@ -6,6 +6,7 @@ mod windows;
 pub use forward::spawn;
 pub use managers::*;
 
+use crate::FirewallConfig;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,12 +22,12 @@ impl Invocation {
     }
 
     /// What the program is run with: the typed arguments plus any its manager needs.
-    pub fn arguments(&self, proxy: &str) -> Vec<String> {
+    pub fn arguments(&self, proxy: &str, config: &FirewallConfig) -> Vec<String> {
         let mut args = self.args.clone();
         let Some(manager) = MANAGERS.iter().find(|manager| manager.command == self.program) else {
             return args;
         };
-        let ours = managers::arguments(proxy, manager, &args);
+        let ours = managers::arguments(proxy, config, manager, &args);
         // Anything after `--` belongs to another program, so ours go before it.
         let at = args.iter().position(|arg| arg == "--").unwrap_or(args.len());
         args.splice(at..at, ours);
@@ -34,15 +35,20 @@ impl Invocation {
     }
 }
 
-pub fn run(port: u16, invocation: &Invocation, dir: Option<&Path>) -> std::io::Result<i32> {
+pub fn run(
+    port: u16,
+    config: &FirewallConfig,
+    invocation: &Invocation,
+    dir: Option<&Path>,
+) -> std::io::Result<i32> {
     let proxy = crate::local_url(port, "");
     let program = resolve(&invocation.program)?;
     let mut command = Command::new(&program);
-    command.args(invocation.arguments(&proxy));
+    command.args(invocation.arguments(&proxy, config));
     if let Some(dir) = dir {
         command.current_dir(dir);
     }
-    for (key, value) in managers::variables(&proxy) {
+    for (key, value) in managers::variables(&proxy, config) {
         command.env(key, value);
     }
     #[cfg(windows)]

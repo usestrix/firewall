@@ -4,7 +4,7 @@ use super::{Manager, PROXY, PYPI_SIMPLE};
 const PIP_ENV: &[(&str, &str)] = &[
     ("PIP_PROXY", PROXY),
     ("PIP_INDEX_URL", PYPI_SIMPLE),
-    ("PIP_TRUSTED_HOST", "pypi.org files.pythonhosted.org"),
+    ("PIP_TRUSTED_HOST", "{host:pypi} {host:pypi-files}"),
     ("PIP_DISABLE_PIP_VERSION_CHECK", "1"),
 ];
 

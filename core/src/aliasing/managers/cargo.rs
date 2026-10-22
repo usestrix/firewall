@@ -14,7 +14,7 @@ pub static CARGO: Manager = Manager {
             "--config",
             "source.crates-io.replace-with=\"firewall\"",
             "--config",
-            "source.firewall.registry=\"sparse+http://index.crates.io/\"",
+            "source.firewall.registry=\"sparse+http://{cargo/index}/\"",
         ],
     }],
 };

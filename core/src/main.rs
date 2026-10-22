@@ -73,13 +73,14 @@ fn serve() -> ! {
 fn run(invocation: Invocation) -> ! {
     telemetry::set_mode("wrapper");
     let command = &invocation.program;
-    let port = match aliasing::spawn(0, load()) {
+    let config = load();
+    let port = match aliasing::spawn(0, config.clone()) {
         Ok(port) => port,
         Err(e) => fail("spawn", &format!("could not start the firewall: {e}")),
     };
     info!(url = %firewall::local_url(port, ""), "firewall listening");
 
-    let result = aliasing::run(port, &invocation, None);
+    let result = aliasing::run(port, &config, &invocation, None);
     telemetry::flush();
     match result {
         Ok(code) => exit(code),
