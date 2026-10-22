@@ -1,8 +1,10 @@
 pub mod age;
 pub mod denylist;
+pub mod organization;
 pub mod osv;
 
 use super::registries::{Package, Registry};
+use crate::config::PackageList;
 use crate::Firewall;
 use std::future::Future;
 use std::pin::Pin;
@@ -30,7 +32,7 @@ pub async fn consult(
     registry: &'static Registry,
     pkg: &Package,
 ) -> Option<(&'static str, Verdict)> {
-    if allowed(firewall, registry, pkg) {
+    if listed(&firewall.config.allow, registry, pkg) {
         return None;
     }
     let mut unsure = None;
@@ -45,8 +47,9 @@ pub async fn consult(
     unsure
 }
 
-fn allowed(firewall: &Firewall, registry: &Registry, pkg: &Package) -> bool {
-    let Some(entries) = firewall.config.allow.get(registry.eco) else {
+/// Whether `list` names `pkg`.
+fn listed(list: &PackageList, registry: &Registry, pkg: &Package) -> bool {
+    let Some(entries) = list.get(registry.eco) else {
         return false;
     };
     entries.iter().any(|entry| {

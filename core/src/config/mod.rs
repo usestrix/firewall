@@ -18,7 +18,7 @@ pub struct FirewallConfig {
     pub min_age_hours: u64,
     pub denylist: DenylistSource,
     /// Packages never screened, by ecosystem: `{"npm": [{"name": "left-pad"}]}`.
-    pub allow: HashMap<String, Vec<AllowedPackage>>,
+    pub allow: PackageList,
     pub telemetry: bool,
     /// Reports installs to, and takes blocks from, a Strix workspace.
     pub platform: Option<PlatformConfig>,
@@ -27,9 +27,12 @@ pub struct FirewallConfig {
     pub registries: Vec<&'static Registry>,
 }
 
+/// Packages by ecosystem, as the allow list and organization blocks name them.
+pub type PackageList = HashMap<String, Vec<ListedPackage>>;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct AllowedPackage {
+pub struct ListedPackage {
     pub name: String,
     /// Every version when absent.
     pub version: Option<String>,
