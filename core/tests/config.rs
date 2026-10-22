@@ -21,6 +21,23 @@ fn the_config_lives_under_the_config_directory() {
     assert!(path.ends_with("config.json"), "{}", path.display());
 }
 
+#[test]
+fn a_later_file_wins_and_allow_lists_add_up() {
+    let dir = std::env::temp_dir().join(format!("firewall-layers-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let user = dir.join("user.json");
+    let system = dir.join("system.json");
+    std::fs::write(&user, r#"{"min_age_hours": 1, "fail_open": false, "allow": {"npm": [{"name": "a"}]}}"#).expect("write");
+    std::fs::write(&system, r#"{"min_age_hours": 24, "allow": {"npm": [{"name": "b"}]}}"#).expect("write");
+    let missing = dir.join("missing.json");
+    let config = FirewallConfig::load_from(&[user, system, missing]).expect("loads");
+    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(config.min_age_hours, 24);
+    assert!(!config.fail_open);
+    let names: Vec<&str> = config.allow["npm"].iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["a", "b"]);
+}
+
 #[tokio::test]
 async fn an_allowed_version_skips_the_filters() {
     // An unreachable denylist would otherwise leave the package unchecked.

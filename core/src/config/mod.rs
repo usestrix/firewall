@@ -1,6 +1,7 @@
 use crate::policies::registries::{Registry, BUILT_IN};
 use directories::ProjectDirs;
 use serde::Deserialize;
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
 use std::path::PathBuf;
@@ -68,18 +69,31 @@ impl Default for DenylistSource {
 }
 
 impl FirewallConfig {
-    /// A missing file means defaults; a bad one is an error, so the policy is never quietly relaxed.
     pub fn load() -> std::io::Result<Self> {
-        let Some(path) = path() else {
-            return Ok(Self::default());
-        };
-        let text = match std::fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(Self::default()),
-            Err(e) => return Err(Error::new(e.kind(), format!("{}: {e}", path.display()))),
-        };
-        serde_json::from_str(&text)
-            .map_err(|e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display())))
+        let mut paths: Vec<PathBuf> = path().into_iter().collect();
+        paths.extend(crate::os::system_config());
+        Self::load_from(&paths)
+    }
+
+    /// Later files win key by key, but allow lists add up.
+    /// A bad file is an error, so the policy is never quietly relaxed.
+    pub fn load_from(paths: &[PathBuf]) -> std::io::Result<Self> {
+        let mut merged = Map::new();
+        for path in paths {
+            let text = match std::fs::read_to_string(path) {
+                Ok(text) => text,
+                Err(e) if e.kind() == ErrorKind::NotFound => continue,
+                Err(e) => return Err(Error::new(e.kind(), format!("{}: {e}", path.display()))),
+            };
+            let invalid = |e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
+            let layer: Value = serde_json::from_str(&text).map_err(invalid)?;
+            FirewallConfig::deserialize(&layer).map_err(invalid)?;
+            let Value::Object(layer) = layer else {
+                unreachable!("a config parses only from an object");
+            };
+            merge(&mut merged, layer);
+        }
+        Ok(serde_json::from_value(Value::Object(merged)).expect("each layer parsed on its own"))
     }
 
     pub fn local_url(&self, path: &str) -> String {
@@ -102,4 +116,16 @@ impl FirewallConfig {
 pub fn path() -> Option<PathBuf> {
     let dirs = ProjectDirs::from("com", "usestrix", "firewall")?;
     Some(dirs.config_dir().join("config.json"))
+}
+
+fn merge(base: &mut Map<String, Value>, top: Map<String, Value>) {
+    for (key, value) in top {
+        match (base.get_mut(&key), value) {
+            (Some(Value::Object(base)), Value::Object(top)) => merge(base, top),
+            (Some(Value::Array(base)), Value::Array(top)) => base.extend(top),
+            (_, value) => {
+                base.insert(key, value);
+            }
+        }
+    }
 }
