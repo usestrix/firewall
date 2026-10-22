@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::warn;
 use windows::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
 use windows::Win32::Security::*;
+use windows::Win32::Storage::FileSystem::CreateDirectoryW;
 use windows_registry::Type;
 
 /// SYSTEM and admins write, users only read, so no one else can plant a CA for node.
@@ -65,25 +66,39 @@ pub fn load_or_create_ca(
     Ok(ca)
 }
 
-/// Created on first use, its owner and ACL reset every time. One a user made first, or a link,
+/// Created on first use with its ACL, which is reset every time. One a user made first, or a link,
 /// is replaced: its owner could grant itself access again, and a link would redirect our writes.
 pub(super) fn secure_data_dir() -> io::Result<PathBuf> {
     let dir = data_dir();
-    match std::fs::symlink_metadata(&dir) {
-        Ok(meta) if meta.file_type().is_symlink() => std::fs::remove_dir(&dir)?,
+    let exists = match std::fs::symlink_metadata(&dir) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            std::fs::remove_dir(&dir)?;
+            false
+        }
         Ok(_) if !owned_by_admins(&dir)? => {
             warn!(dir = %dir.display(), "replacing a data folder not created by an admin");
-            std::fs::remove_dir_all(&dir)?
+            std::fs::remove_dir_all(&dir)?;
+            false
         }
-        _ => {}
-    }
-    std::fs::create_dir_all(&dir)?;
+        Ok(_) => true,
+        Err(_) => false,
+    };
     let info = OWNER_SECURITY_INFORMATION
         | DACL_SECURITY_INFORMATION
         | PROTECTED_DACL_SECURITY_INFORMATION;
     let path = HSTRING::from(dir.as_path());
     let acl = security_descriptor(DATA_DIR_ACL)?;
-    unsafe { SetFileSecurityW(&path, info, PSECURITY_DESCRIPTOR(acl.0)).ok()? };
+    if exists {
+        unsafe { SetFileSecurityW(&path, info, PSECURITY_DESCRIPTOR(acl.0)).ok()? };
+    } else {
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: acl.0,
+            bInheritHandle: false.into(),
+        };
+        // Never inherits ProgramData's ACL, which lets users add files; fails if it was recreated.
+        unsafe { CreateDirectoryW(&path, Some(&attributes))? };
+    }
     Ok(dir)
 }
 
