@@ -7,9 +7,11 @@ use schannel::cert_context::CertContext;
 use schannel::cert_store::{CertAdd, CertStore};
 use std::io;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::warn;
 use windows::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
 use windows::Win32::Security::*;
+use windows_registry::Type;
 
 /// SYSTEM and admins write, users only read, so no one else can plant a CA for node.
 const DATA_DIR_ACL: &str = concat!(
@@ -19,6 +21,9 @@ const DATA_DIR_ACL: &str = concat!(
     "(A;OICI;FA;;;BA)",   // allow Administrators full control
     "(A;OICI;FRFX;;;BU)", // allow Users read and execute only
 );
+
+/// 1970 in FILETIME, which counts 100 ns from 1601.
+const FILETIME_UNIX_EPOCH: u128 = 116_444_736_000_000_000;
 
 /// Trusted machine-wide so restarts keep it; replaced if the hosts change.
 pub fn load_or_create_ca(
@@ -34,6 +39,16 @@ pub fn load_or_create_ca(
             LOCAL_MACHINE
                 .create(REGISTRY_KEY)?
                 .set_string("ca", ca.to_blob(hosts))?;
+            // Windows discards CRLs it cached before now, in case an old CA's is cached at our URL.
+            let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() / 100
+                + FILETIME_UNIX_EPOCH;
+            let chain = r"SOFTWARE\Microsoft\Cryptography\OID\EncodingType 0\CertDllCreateCertificateChainEngine\Config";
+            let resync = (now as u64).to_le_bytes();
+            LOCAL_MACHINE.create(chain)?.set_bytes(
+                "ChainCacheResyncFiletime",
+                Type::Bytes,
+                &resync,
+            )?;
             ca
         }
     };
