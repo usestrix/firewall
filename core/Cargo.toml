@@ -38,14 +38,17 @@ path = "src/main.rs"
 [[bin]]
 name = "firewall-service"
 path = "src/bin/firewall-service.rs"
+required-features = ["machine-wide"]
 
 [[bin]]
 name = "firewall-tray"
 path = "src/bin/firewall-tray.rs"
+required-features = ["machine-wide"]
 
 [[bin]]
 name = "firewall-uninstall"
 path = "src/bin/firewall-uninstall.rs"
+required-features = ["machine-wide"]
 
 [[example]]
 name = "proxy-test"
@@ -86,6 +89,10 @@ path = "tests/tpm.rs"
 [[test]]
 name = "managers"
 path = "tests/managers.rs"
+
+[features]
+# Builds the machine-wide binaries: the Windows service and tray, and the macOS uninstaller.
+machine-wide = []
 
 [dependencies]
 clap = "4.6.6"
