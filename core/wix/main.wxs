@@ -21,7 +21,7 @@
     <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
 <?endif ?>
 
-<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi' xmlns:util='http://schemas.microsoft.com/wix/UtilExtension'>
 
     <Product
         Id='*'
@@ -95,6 +95,20 @@
                         <Environment Id='NODE_EXTRA_CA_CERTS' Name='NODE_EXTRA_CA_CERTS' Value='[CommonAppDataFolder]Strix Firewall\ca.pem' Action='set' System='yes'/>
                         <Environment Id='UV_SYSTEM_CERTS' Name='UV_SYSTEM_CERTS' Value='1' Action='set' System='yes'/>
                     </Component>
+                    <Component Id='binary2' Guid='*'>
+                        <File
+                            Id='exe2'
+                            Name='firewall-tray.exe'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\firewall-tray.exe'
+                            KeyPath='yes'/>
+                        <RegistryValue
+                            Root='HKLM'
+                            Key='SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+                            Name='Strix Firewall'
+                            Type='string'
+                            Value='"[#exe2]"'/>
+                    </Component>
                 </Directory>
             </Directory>
         </Directory>
@@ -110,6 +124,7 @@
             Absent='disallow'>
             <ComponentRef Id='binary0'/>
             <ComponentRef Id='binary1'/>
+            <ComponentRef Id='binary2'/>
 
             <Feature
                 Id='Environment'
@@ -147,11 +162,15 @@
             Execute='deferred'
             Impersonate='no'
             Return='check'/>
+        <!-- Before its file is replaced or removed. Trays WM_CLOSE does not reach, as in other sessions, are terminated. -->
+        <util:CloseApplication Id='CloseTray' Target='firewall-tray.exe' CloseMessage='yes' RebootPrompt='no' TerminateProcess='0'/>
         <InstallExecuteSequence>
             <!-- An upgrade removes the old version too, but should keep screening. -->
             <Custom Action='UninstallFirewall' After='DeleteServices'>REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
             <Custom Action='SetFailureActions' After='InstallServices'>NOT REMOVE~="ALL"</Custom>
             <Custom Action='SetFailureFlag' After='SetFailureActions'>NOT REMOVE~="ALL"</Custom>
+            <!-- The default, before InstallFiles, is after RemoveFiles, which would find the tray still running. -->
+            <Custom Action='WixCloseApplications' Before='RemoveFiles'/>
         </InstallExecuteSequence>
 
         <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
