@@ -1,4 +1,5 @@
 use rama::error::BoxError;
+use rama::tls::boring::core::sha::sha256;
 use rama::tls::boring::core::x509::X509;
 use rcgen::{
     BasicConstraints, CertificateParams, CertificateRevocationListParams, DistinguishedName,
@@ -37,6 +38,12 @@ impl CertificateAuthority {
         let ca = Self::new(pem.to_owned()).ok()?;
         let held = ca.crt.public_key().ok()?.public_key_to_der().ok()?;
         (held == signer.subject_public_key_info()).then_some(ca)
+    }
+
+    /// Unique to this CA, so a verifier's cached CRL from an earlier one never applies to it.
+    pub fn crl_path(&self) -> String {
+        let digest = sha256(self.pem.as_bytes());
+        format!("/{}.crl", digest[..8].iter().map(|b| format!("{b:02x}")).collect::<String>())
     }
 
     fn new(pem: String) -> Result<Self, BoxError> {

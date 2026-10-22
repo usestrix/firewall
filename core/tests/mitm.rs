@@ -50,3 +50,12 @@ fn ca_signs_an_empty_crl() {
     let crl = mitm::crl(&["registry.npmjs.org", "pypi.org"], &signer()).expect("sign a crl");
     assert_eq!(crl[0], 0x30, "a DER SEQUENCE");
 }
+
+/// A re-minted CA must not inherit the old one's CRL from a verifier's cache.
+#[test]
+fn each_ca_names_its_own_crl() {
+    let signer = signer();
+    let npm = mitm::CertificateAuthority::generate(&["registry.npmjs.org"], &signer).expect("mint a ca");
+    let pypi = mitm::CertificateAuthority::generate(&["pypi.org"], &signer).expect("mint a ca");
+    assert_ne!(npm.crl_path(), pypi.crl_path());
+}
