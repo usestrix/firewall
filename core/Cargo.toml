@@ -3,6 +3,7 @@ name = "strix-firewall"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
+authors = ["Strix"]
 description = "Screens package downloads for known malware before they reach your machine"
 repository = "https://github.com/usestrix/firewall"
 homepage = "https://github.com/usestrix/firewall"
@@ -17,6 +18,12 @@ aarch64-apple-darwin = ["firewall"]
 x86_64-apple-darwin = ["firewall"]
 aarch64-unknown-linux-gnu = ["firewall"]
 x86_64-unknown-linux-gnu = ["firewall"]
+
+[package.metadata.wix]
+upgrade-guid = "D944C2F6-BF55-4B21-A60E-1BBDB1A66293"
+path-guid = "033B1050-23D0-4F5A-A0D3-F4757B4B67E0"
+license = false
+eula = false
 
 [lib]
 name = "firewall"

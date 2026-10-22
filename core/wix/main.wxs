@@ -1,0 +1,167 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<!--
+  Copyright (C) 2017 Christopher R. Field.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-->
+
+<?if $(sys.BUILDARCH) = x64 or $(sys.BUILDARCH) = arm64 ?>
+    <?define PlatformProgramFilesFolder = "ProgramFiles64Folder" ?>
+<?else ?>
+    <?define PlatformProgramFilesFolder = "ProgramFilesFolder" ?>
+<?endif ?>
+
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+
+    <Product
+        Id='*'
+        Name='strix-firewall'
+        UpgradeCode='D944C2F6-BF55-4B21-A60E-1BBDB1A66293'
+        Manufacturer='Strix'
+        Language='1033'
+        Codepage='1252'
+        Version='$(var.Version)'>
+
+        <Package Id='*'
+            Keywords='Installer'
+            Description='Screens package downloads for known malware before they reach your machine'
+            Manufacturer='Strix'
+            InstallerVersion='500'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perMachine'
+            SummaryCodepage='1252'
+            />
+
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.'/>
+
+        <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1'/>
+        <Property Id='DiskPrompt' Value='strix-firewall Installation'/>
+
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+            <Directory Id='$(var.PlatformProgramFilesFolder)' Name='PFiles'>
+                <Directory Id='APPLICATIONFOLDER' Name='Strix Firewall'>
+                    <Component Id='Path' Guid='033B1050-23D0-4F5A-A0D3-F4757B4B67E0' KeyPath='yes'>
+                        <Environment
+                            Id='PATH'
+                            Name='PATH'
+                            Value='[APPLICATIONFOLDER]'
+                            Permanent='no'
+                            Part='last'
+                            Action='set'
+                            System='yes'/>
+                    </Component>
+                    <Component Id='binary0' Guid='*'>
+                        <File
+                            Id='exe0'
+                            Name='firewall.exe'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\firewall.exe'
+                            KeyPath='yes'/>
+                    </Component>
+                    <Component Id='binary1' Guid='*'>
+                        <File
+                            Id='exe1'
+                            Name='firewall-service.exe'
+                            DiskId='1'
+                            Source='$(var.CargoTargetBinDir)\firewall-service.exe'
+                            KeyPath='yes'/>
+                        <ServiceInstall
+                            Name='StrixFirewall'
+                            DisplayName='Strix Firewall'
+                            Description='Screens package downloads for known malware'
+                            Type='ownProcess'
+                            Start='auto'
+                            ErrorControl='normal'
+                            Vital='yes'>
+                            <!-- The default, except that interactive users (IU) may also start (RP), stop (WP) and pause (DT) it, as the tray does. -->
+                            <PermissionEx Sddl='D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPWPDTLOCRRC;;;IU)(A;;CCLCSWLOCRRC;;;SU)'/>
+                        </ServiceInstall>
+                        <!-- Waits, so a service that cannot start fails the install. -->
+                        <ServiceControl Id='StrixFirewall' Name='StrixFirewall' Start='install' Stop='both' Remove='uninstall' Wait='yes'/>
+                        <!-- For clients that read no trust store. SSL_CERT_FILE would replace OpenSSL's bundle. -->
+                        <Environment Id='NODE_EXTRA_CA_CERTS' Name='NODE_EXTRA_CA_CERTS' Value='[CommonAppDataFolder]Strix Firewall\ca.pem' Action='set' System='yes'/>
+                        <Environment Id='UV_SYSTEM_CERTS' Name='UV_SYSTEM_CERTS' Value='1' Action='set' System='yes'/>
+                    </Component>
+                </Directory>
+            </Directory>
+        </Directory>
+
+        <Feature
+            Id='Binaries'
+            Title='Application'
+            Description='Installs the firewall and its service.'
+            Level='1'
+            ConfigurableDirectory='APPLICATIONFOLDER'
+            AllowAdvertise='no'
+            Display='expand'
+            Absent='disallow'>
+            <ComponentRef Id='binary0'/>
+            <ComponentRef Id='binary1'/>
+
+            <Feature
+                Id='Environment'
+                Title='PATH Environment Variable'
+                Description='Add the install location of the [ProductName] executable to the PATH system environment variable. This allows the [ProductName] executable to be called from any location.'
+                Level='1'
+                Absent='allow'>
+                <ComponentRef Id='Path'/>
+            </Feature>
+        </Feature>
+
+        <!-- Removing the app must not leave the hosts file pointing at a service that is gone. -->
+        <CustomAction
+            Id='UninstallFirewall'
+            FileKey='exe1'
+            ExeCommand='uninstall'
+            Execute='deferred'
+            Impersonate='no'
+            Return='check'/>
+        <!--
+          Registry hosts lead nowhere while the service is down, so bring it back, also when it fails to
+          start. Through sc.exe, as MsiServiceConfigFailureActions cannot restart a service.
+        -->
+        <CustomAction
+            Id='SetFailureActions'
+            Directory='APPLICATIONFOLDER'
+            ExeCommand='"[System64Folder]sc.exe" failure StrixFirewall reset= 3600 actions= restart/5000/restart/5000/restart/5000'
+            Execute='deferred'
+            Impersonate='no'
+            Return='check'/>
+        <CustomAction
+            Id='SetFailureFlag'
+            Directory='APPLICATIONFOLDER'
+            ExeCommand='"[System64Folder]sc.exe" failureflag StrixFirewall 1'
+            Execute='deferred'
+            Impersonate='no'
+            Return='check'/>
+        <InstallExecuteSequence>
+            <!-- An upgrade removes the old version too, but should keep screening. -->
+            <Custom Action='UninstallFirewall' After='DeleteServices'>REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+            <Custom Action='SetFailureActions' After='InstallServices'>NOT REMOVE~="ALL"</Custom>
+            <Custom Action='SetFailureFlag' After='SetFailureActions'>NOT REMOVE~="ALL"</Custom>
+        </InstallExecuteSequence>
+
+        <SetProperty Id='ARPINSTALLLOCATION' Value='[APPLICATIONFOLDER]' After='CostFinalize'/>
+        <Property Id='ARPHELPLINK' Value='https://github.com/usestrix/firewall'/>
+
+        <UI>
+            <UIRef Id='WixUI_FeatureTree'/>
+            <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='99'>1</Publish>
+            <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='99'>1</Publish>
+        </UI>
+    </Product>
+
+</Wix>
