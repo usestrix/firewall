@@ -217,6 +217,12 @@
             Execute='deferred'
             Impersonate='no'
             Return='check'/>
+        <!-- From the exit dialog, which runs as the signed-in user rather than elevated. -->
+        <CustomAction
+            Id='StartTray'
+            Directory='APPLICATIONFOLDER'
+            ExeCommand='"[System64Folder]conhost.exe" --headless "[#exe0]"'
+            Return='asyncNoWait'/>
         <InstallExecuteSequence>
             <!-- An upgrade removes the old version too, but should keep screening. -->
             <Custom Action='UninstallFirewall' After='DeleteServices'>REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
@@ -253,6 +259,7 @@
             -->
             <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='99'>1</Publish>
             <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='99'>1</Publish>
+            <Publish Dialog='ExitDialog' Control='Finish' Event='DoAction' Value='StartTray' Order='1'>NOT Installed</Publish>
 
         </UI>
 
