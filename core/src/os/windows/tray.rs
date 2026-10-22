@@ -31,7 +31,7 @@ pub fn run() -> Result<(), BoxError> {
         &status,
         &PredefinedMenuItem::separator(),
         &pause,
-        &MenuItem::with_id(MENU_LOG, "Open log", true, None),
+        &MenuItem::with_id(MENU_LOG, "Open logs", true, None),
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(MENU_QUIT, "Quit", true, None),
     ])?;
@@ -124,7 +124,7 @@ impl Tray {
             }
             MENU_PAUSE => || Ok(open_service()?.start::<&str>(&[])?),
             MENU_LOG => {
-                let log = HSTRING::from(data_dir().join("firewall.log").as_path());
+                let log = HSTRING::from(data_dir().as_path());
                 let none = PCWSTR::null();
                 unsafe { ShellExecuteW(None, w!("open"), &log, none, none, SW_SHOWNORMAL) };
                 return;
