@@ -39,6 +39,21 @@ fn a_later_file_wins_and_allow_lists_add_up() {
 }
 
 #[tokio::test]
+async fn a_mirror_is_screened_like_the_registry_it_copies() {
+    let config = r#"{"registries": {"npm": ["https://npm.example.com/"]}}"#;
+    let firewall = Firewall::new(serde_json::from_str(config).expect("parses"));
+    assert!(firewall.hosts().contains(&"npm.example.com"));
+    let url = "https://npm.example.com/left-pad/-/left-pad-1.3.0.tgz";
+    let (registry, rest) = firewall.match_on(url, |r| r.upstream).expect("the mirror");
+    assert_eq!(firewall.resolve(registry, rest).pkg.map(|p| p.label()), Some("left-pad@1.3.0".into()));
+    let unknown = std::env::temp_dir().join(format!("firewall-mirror-{}.json", std::process::id()));
+    std::fs::write(&unknown, r#"{"registries": {"nmp": ["https://npm.example.com/"]}}"#).expect("write");
+    let loaded = FirewallConfig::load_from(std::slice::from_ref(&unknown));
+    std::fs::remove_file(&unknown).ok();
+    assert!(loaded.is_err());
+}
+
+#[tokio::test]
 async fn an_allowed_version_skips_the_filters() {
     // An unreachable denylist would otherwise leave the package unchecked.
     let config = r#"{"allow": {"go": [{"name": "golang.org/x/net", "version": "v0.20.0"}]}, "denylist": {"base": "http://127.0.0.1:1"}}"#;

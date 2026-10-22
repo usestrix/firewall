@@ -25,7 +25,10 @@ npm, pnpm, bun, pip, pip3, pipenv, pdm, uv, cargo, go and gem, downloading from:
 | RubyGems | rubygems.org |
 | Go | proxy.golang.org |
 
-Private registries and mirrors are not screened.
+Machine-wide screening also covers mirrors listed in the config file, under the registry they
+copy (`npm`, `pypi`, `pypi-files`, `cargo/index`, `cargo-dl`, `crates-api`, `gem` or `go`):
+`"registries": {"npm": ["https://npm.example.com/"]}`. A mirror must lay out its paths like that
+registry. `firewall <manager>` still sends managers to the public registries.
 
 ## How machine-wide screening works
 
