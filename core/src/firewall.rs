@@ -1,4 +1,4 @@
-use crate::config::FirewallConfig;
+use crate::config::{AllowedPackage, FirewallConfig};
 use crate::policies::filters::age::Age;
 use crate::policies::filters::denylist::Denylist;
 use crate::policies::filters::osv::Osv;
@@ -6,12 +6,16 @@ use crate::policies::filters::Filter;
 use crate::policies::registries::*;
 use regex::Regex;
 use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::Instant;
 
 pub struct Firewall {
     pub config: FirewallConfig,
     registries: Vec<&'static Registry>,
     patterns: HashMap<&'static str, Vec<Regex>>,
     filters: Vec<Box<dyn Filter>>,
+    /// Each lift expires at its time, or lasts until the firewall stops. Never saved.
+    age_lifted: Mutex<Vec<(String, AllowedPackage, Option<Instant>)>>,
 }
 
 impl Default for Firewall {
@@ -34,7 +38,7 @@ impl Firewall {
         if config.min_age_hours > 0 {
             filters.push(Box::new(Age::new(config.min_age_hours)));
         }
-        Firewall { config, registries, patterns, filters }
+        Firewall { config, registries, patterns, filters, age_lifted: Mutex::default() }
     }
 
     pub fn match_on<'a>(
@@ -71,6 +75,19 @@ impl Firewall {
 
     pub fn filters(&self) -> &[Box<dyn Filter>] {
         &self.filters
+    }
+
+    pub fn lift_age_check(&self, eco: &str, package: AllowedPackage, until: Option<Instant>) {
+        let mut lifted = self.age_lifted.lock().unwrap_or_else(|e| e.into_inner());
+        lifted.retain(|(_, _, until)| until.is_none_or(|until| until > Instant::now()));
+        lifted.push((eco.to_owned(), package, until));
+    }
+
+    pub fn age_check_lifted(&self, eco: &str, matches: impl Fn(&AllowedPackage) -> bool) -> bool {
+        let lifted = self.age_lifted.lock().unwrap_or_else(|e| e.into_inner());
+        lifted.iter().any(|(e, package, until)| {
+            e == eco && until.is_none_or(|until| until > Instant::now()) && matches(package)
+        })
     }
 }
 

@@ -121,7 +121,7 @@ fn merge(base: &mut Map<String, Value>, top: Map<String, Value>) {
 }
 
 /// Adds an `allow` entry to the file, leaving the rest of it as written.
-pub fn allow(path: &Path, eco: &str, name: &str, version: Option<&str>) -> std::io::Result<()> {
+pub fn allow(path: &Path, eco: &str, name: &str, version: &str) -> std::io::Result<()> {
     let invalid = |e: String| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
     let mut config = match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text).map_err(|e| invalid(e.to_string()))?,
