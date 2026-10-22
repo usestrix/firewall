@@ -1,26 +1,21 @@
-# Supported platforms
+# Platforms
 
-The `firewall` command screens what one command installs (`firewall npm install …`) or serves a
-local registry (`firewall serve`). Machine-wide screening, which needs no command prefix, is
-macOS and Windows only.
+## Requirements
 
-| Platform | Architectures | `firewall <manager>` and `serve` | Machine-wide |
-|---|---|---|---|
-| macOS 13+ | Apple silicon, Intel | Yes | Yes: the app's system extension, needs a Secure Enclave |
-| Windows 10/11 | x86-64 | Yes | Yes: the MSI, needs a TPM 2.0 |
-| Linux (glibc) | x86-64, arm64 | Yes | No |
+| | Command prefix | Machine-wide |
+|---|---|---|
+| macOS | 13+, Apple silicon or Intel | Apple silicon, or an Intel Mac with a T2 chip |
+| Windows | 10 or 11, x86-64 | A TPM 2.0, and an admin to install |
+| Linux | glibc, x86-64 or arm64 | Not supported |
 
-Release builds come from cargo-dist for exactly the targets above: `aarch64-apple-darwin`,
-`x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu` and
-`x86_64-pc-windows-msvc`. There are no musl, 32-bit or Windows on Arm builds.
+There are no musl, 32-bit or Windows on Arm builds.
 
-`cargo install strix-firewall` installs only `firewall`. The machine-wide binaries come with the
-macOS app and the MSI, or with `--features machine-wide`.
+`cargo install strix-firewall` installs only `firewall`. Add `--features machine-wide` for the
+machine-wide binaries, which otherwise come with the macOS app and the Windows MSI.
 
-## Package managers
+## What is screened
 
-`firewall <manager>` supports npm, pnpm, bun, pip, pip3, pipenv, pdm, uv, cargo, go and gem.
-They are screened against these registries:
+npm, pnpm, bun, pip, pip3, pipenv, pdm, uv, cargo, go and gem, downloading from:
 
 | Ecosystem | Hosts |
 |---|---|
@@ -32,46 +27,37 @@ They are screened against these registries:
 
 Private registries and mirrors are not screened.
 
-## Machine-wide screening
+## How machine-wide screening works
 
-Traffic to the hosts above is intercepted with a local CA that is name-constrained to them, so
-it can sign nothing else. Its private key never leaves the hardware.
+Traffic to the hosts above is decrypted with a local CA that can only sign for those hosts. Its
+private key never leaves the Secure Enclave (macOS) or the TPM (Windows).
 
-**macOS**
-- Needs macOS 13 or later on Apple silicon, or on an Intel Mac with a T2 chip. The key is held
-  in the Secure Enclave.
-- The system extension must be approved in System Settings.
+- **macOS:** a system extension, which you approve in System Settings.
+- **Windows:** a service, with a hosts-file entry pointing each registry host at it.
+  - Without a TPM, the service can't start, so the install fails.
+  - Any signed-in user can pause screening from the notification-area icon, until they resume
+    it or the service restarts.
+  - Clients that use an HTTP proxy or their own DNS skip the hosts file and aren't screened.
+    Nor is WSL.
+  - Each client has to trust the CA:
 
-**Windows**
-- Needs Windows 10 or 11 on x86-64 with a TPM 2.0. The key is held in the TPM.
-- Without a TPM, the service cannot start, so the MSI fails rather than falling back to a
-  software key.
-- Installing and removing the MSI needs an admin.
-- A notification-area icon shows whether screening is on. Any signed-in user can pause
-  screening from it, until they resume it or the service restarts.
-- The hosts file sends each registry host to a local service. Clients must therefore trust the
-  Windows certificate store, or the CA exported to `%ProgramData%\Strix Firewall\ca.pem`.
-  - npm, pnpm and bun use the exported CA via `NODE_EXTRA_CA_CERTS`.
-  - uv uses the store via `UV_SYSTEM_CERTS`.
-  - pip and cargo use the store directly.
-  - gem and go are untested.
-- Not covered:
-  - Clients that resolve through an HTTP proxy or their own DNS skip the hosts file, and are
-    not screened.
-  - WSL is not supported.
+    | Client | Trusts it through |
+    |---|---|
+    | npm, pnpm, bun | `NODE_EXTRA_CA_CERTS`, set to `%ProgramData%\Strix Firewall\ca.pem` |
+    | uv | `UV_SYSTEM_CERTS`, which uses the Windows certificate store |
+    | pip, cargo | The Windows certificate store |
+    | gem, go | Untested |
 
-Windows machine-wide screening has been tested on Windows 11 only, and macOS machine-wide
-screening has not been tested on Intel Macs.
+Tested on Windows 11 and Apple silicon only.
 
 ## Changing settings
 
-Machine-wide screening reads its settings from a JSON file that only an admin can edit. It reads
-the file only when screening starts, so restart screening after editing it. An invalid file stops
-screening from starting.
+Machine-wide screening reads an admin-only JSON file when it starts. After editing it, restart
+screening. An invalid file stops screening from starting.
 
 | OS | File | Restart from |
 |---|---|---|
-| macOS | `/Library/Application Support/Firewall/config.json` | the menu bar's Restart |
-| Windows | `%ProgramData%\Strix Firewall\config.json` | the notification-area icon's Restart |
+| macOS | `/Library/Application Support/Firewall/config.json` | The menu bar's Restart |
+| Windows | `%ProgramData%\Strix Firewall\config.json` | The notification-area icon's Restart |
 
-`firewall <manager>` and `serve` read `config.json` in the user's config folder instead.
+The `firewall` command reads `config.json` from the user's config folder instead.
