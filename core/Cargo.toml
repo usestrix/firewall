@@ -32,6 +32,10 @@ path = "src/main.rs"
 name = "firewall-service"
 path = "src/bin/firewall-service.rs"
 
+[[bin]]
+name = "firewall-uninstall"
+path = "src/bin/firewall-uninstall.rs"
+
 [[example]]
 name = "proxy-test"
 path = "tests/proxy-test/main.rs"
