@@ -67,9 +67,8 @@ pub(super) fn secure_data_dir() -> io::Result<PathBuf> {
         | DACL_SECURITY_INFORMATION
         | PROTECTED_DACL_SECURITY_INFORMATION;
     let path = HSTRING::from(dir.as_path());
-    with_security_descriptor(DATA_DIR_ACL, |acl| unsafe {
-        SetFileSecurityW(&path, info, acl).ok()
-    })?;
+    let acl = security_descriptor(DATA_DIR_ACL)?;
+    unsafe { SetFileSecurityW(&path, info, PSECURITY_DESCRIPTOR(acl.0)).ok()? };
     Ok(dir)
 }
 

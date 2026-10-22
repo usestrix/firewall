@@ -11,7 +11,7 @@ pub use tpm::CaKey;
 use rama::error::BoxError;
 use std::net::Ipv4Addr;
 use std::path::PathBuf;
-use windows::core::{GUID, HSTRING};
+use windows::core::{Owned, GUID, HSTRING};
 use windows::Win32::Foundation::{LocalFree, ERROR_FILE_NOT_FOUND, HLOCAL};
 use windows::Win32::Security::Authorization::*;
 use windows::Win32::Security::PSECURITY_DESCRIPTOR;
@@ -100,11 +100,8 @@ fn write_hosts_entries(hosts: &[&'static str]) -> std::io::Result<()> {
     std::fs::write(hosts_file(), new)
 }
 
-/// Parses `sddl` into a security descriptor for `apply`, then frees it.
-fn with_security_descriptor(
-    sddl: &str,
-    apply: impl FnOnce(PSECURITY_DESCRIPTOR) -> windows::core::Result<()>,
-) -> windows::core::Result<()> {
+/// Parses `sddl`; freed on drop.
+fn security_descriptor(sddl: &str) -> windows::core::Result<Owned<HLOCAL>> {
     let mut descriptor = PSECURITY_DESCRIPTOR::default();
     unsafe {
         ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -114,9 +111,7 @@ fn with_security_descriptor(
             None,
         )?
     };
-    let applied = apply(descriptor);
-    unsafe { LocalFree(Some(HLOCAL(descriptor.0))) };
-    applied
+    Ok(unsafe { Owned::new(HLOCAL(descriptor.0)) })
 }
 
 fn read_registry_string(key: &str, value: &str) -> Result<Option<String>, BoxError> {
