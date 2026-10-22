@@ -6,13 +6,21 @@ It covers npm, pnpm, bun, pip, uv, pipenv, pdm, cargo, gem and go.
 
 ## Install
 
-There are no prebuilt releases yet; build from a clone of this repository.
-
-**Command-line tool** (macOS, Linux):
+**Command-line tool**, with any of:
 
 ```sh
-cargo install --path core
+brew install usestrix/tap/strix-firewall
+curl -LsSf https://github.com/usestrix/firewall/releases/latest/download/strix-firewall-installer.sh | sh
+cargo install strix-firewall
 ```
+
+On Windows:
+
+```powershell
+powershell -c "irm https://github.com/usestrix/firewall/releases/latest/download/strix-firewall-installer.ps1 | iex"
+```
+
+From a clone, `cargo install --path core`.
 
 **Whole-machine firewall** (macOS 13 or later on Apple Silicon):
 
