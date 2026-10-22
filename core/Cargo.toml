@@ -99,6 +99,7 @@ security-framework-sys = "2.17.0"
 rama = { version = "0.4.0", features = ["dns-hickory"] }
 schannel = "0.1.29"
 tokio = { version = "1.53.1", features = ["net"] }
+tracing-appender = "0.2.5"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Security",

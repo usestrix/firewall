@@ -23,8 +23,9 @@ use rcgen::SigningKey;
 use std::convert::Infallible;
 use std::ffi::OsString;
 use std::net::{IpAddr, Ipv4Addr};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use windows_service::service::*;
 use windows_service::service_control_handler::{
     self, ServiceControlHandlerResult, ServiceStatusHandle,
@@ -32,8 +33,6 @@ use windows_service::service_control_handler::{
 use windows_service::{define_windows_service, service_dispatcher};
 
 const CRL_PATH: &str = "/ca.crl";
-/// Past this the log moves aside, keeping one previous file.
-const LOG_ROTATE_SIZE: u64 = 1 << 20;
 
 define_windows_service!(ffi_service_main, service_main);
 
@@ -44,23 +43,21 @@ pub fn run() -> windows_service::Result<()> {
 
 /// stderr goes nowhere in a service, so events go to a file beside the CA.
 fn service_main(_arguments: Vec<OsString>) {
-    let log = secure_data_dir().and_then(|dir| {
-        let path = dir.join("firewall.log");
-        // At each start, so the last crash survives the restart that follows it.
-        if std::fs::metadata(&path).is_ok_and(|log| log.len() > LOG_ROTATE_SIZE) {
-            let _ = std::fs::rename(&path, dir.join("firewall.log.1"));
-        }
-        std::fs::File::options()
-            .create(true)
-            .append(true)
-            .open(path)
+    let log = secure_data_dir().ok().and_then(|dir| {
+        RollingFileAppender::builder()
+            .rotation(Rotation::DAILY)
+            .filename_prefix("firewall")
+            .filename_suffix("log")
+            .max_log_files(7)
+            .build(dir)
+            .ok()
     });
-    if let Ok(file) = log {
+    if let Some(appender) = log {
         let filter = crate::log_filter("info");
         let _ = tracing_subscriber::fmt()
             .with_env_filter(filter)
             .with_ansi(false)
-            .with_writer(Mutex::new(file))
+            .with_writer(appender)
             .try_init();
     }
     std::panic::set_hook(Box::new(|panic| tracing::error!("{panic}")));
