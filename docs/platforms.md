@@ -14,6 +14,9 @@ Release builds come from cargo-dist for exactly the targets above: `aarch64-appl
 `x86_64-apple-darwin`, `aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu` and
 `x86_64-pc-windows-msvc`. There are no musl, 32-bit or Windows on Arm builds.
 
+`cargo install strix-firewall` installs only `firewall`. The machine-wide binaries come with the
+macOS app and the MSI, or with `--features machine-wide`.
+
 ## Package managers
 
 `firewall <manager>` supports npm, pnpm, bun, pip, pip3, pipenv, pdm, uv, cargo, go and gem.
