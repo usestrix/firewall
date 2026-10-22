@@ -162,6 +162,12 @@
             Execute='deferred'
             Impersonate='no'
             Return='check'/>
+        <!-- From the exit dialog, which runs as the signed-in user rather than elevated. -->
+        <CustomAction
+            Id='StartTray'
+            Directory='APPLICATIONFOLDER'
+            ExeCommand='"[#exe2]"'
+            Return='asyncNoWait'/>
         <!-- Before its file is replaced or removed. Trays WM_CLOSE does not reach, as in other sessions, are terminated. -->
         <util:CloseApplication Id='CloseTray' Target='firewall-tray.exe' CloseMessage='yes' RebootPrompt='no' TerminateProcess='0'/>
         <InstallExecuteSequence>
@@ -180,6 +186,7 @@
             <UIRef Id='WixUI_FeatureTree'/>
             <Publish Dialog='WelcomeDlg' Control='Next' Event='NewDialog' Value='CustomizeDlg' Order='99'>1</Publish>
             <Publish Dialog='CustomizeDlg' Control='Back' Event='NewDialog' Value='WelcomeDlg' Order='99'>1</Publish>
+            <Publish Dialog='ExitDialog' Control='Finish' Event='DoAction' Value='StartTray' Order='1'>NOT Installed</Publish>
         </UI>
     </Product>
 
