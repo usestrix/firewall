@@ -6,7 +6,7 @@ macOS and Windows only.
 
 | Platform | Architectures | `firewall <manager>` and `serve` | Machine-wide |
 |---|---|---|---|
-| macOS 13+ | Apple silicon, Intel | Yes | Apple silicon only: the app's system extension |
+| macOS 13+ | Apple silicon, Intel | Yes | Yes: the app's system extension, needs a Secure Enclave |
 | Windows 10/11 | x86-64 | Yes | Yes: the MSI, needs a TPM 2.0 |
 | Linux (glibc) | x86-64, arm64 | Yes | No |
 
@@ -38,7 +38,8 @@ Traffic to the hosts above is intercepted with a local CA that is name-constrain
 it can sign nothing else. Its private key never leaves the hardware.
 
 **macOS**
-- Needs macOS 13 or later on Apple silicon. The key is held in the Secure Enclave.
+- Needs macOS 13 or later on Apple silicon, or on an Intel Mac with a T2 chip. The key is held
+  in the Secure Enclave.
 - The system extension must be approved in System Settings.
 
 **Windows**
@@ -59,4 +60,18 @@ it can sign nothing else. Its private key never leaves the hardware.
     not screened.
   - WSL is not supported.
 
-Windows machine-wide screening has been tested on Windows 11 only.
+Windows machine-wide screening has been tested on Windows 11 only, and macOS machine-wide
+screening has not been tested on Intel Macs.
+
+## Changing settings
+
+Machine-wide screening reads its settings from a JSON file that only an admin can edit. It reads
+the file only when screening starts, so restart screening after editing it. An invalid file stops
+screening from starting.
+
+| OS | File | Restart from |
+|---|---|---|
+| macOS | `/Library/Application Support/Firewall/config.json` | the menu bar's Restart |
+| Windows | `%ProgramData%\Strix Firewall\config.json` | the notification-area icon's Restart |
+
+`firewall <manager>` and `serve` read `config.json` in the user's config folder instead.
