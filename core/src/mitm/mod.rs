@@ -3,7 +3,7 @@ mod issuer;
 mod route;
 mod screen;
 
-pub use ca::{crl, CaSigner, CertificateAuthority, COMMON_NAME};
+pub use ca::{crl, CaSigner, CertificateAuthority, COMMON_NAME, ORGANIZATION};
 
 use crate::Firewall;
 use issuer::ConstrainedCertIssuer;

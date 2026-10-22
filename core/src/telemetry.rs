@@ -30,7 +30,7 @@ static TELEMETRY: LazyLock<Option<Telemetry>> = LazyLock::new(|| {
     })
 });
 
-/// How the firewall is running: "extension", "wrapper" or "proxy".
+/// How the firewall is running: "extension", "service", "wrapper" or "proxy".
 static MODE: OnceLock<&'static str> = OnceLock::new();
 
 struct Telemetry {

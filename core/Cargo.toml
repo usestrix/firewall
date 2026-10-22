@@ -10,6 +10,14 @@ homepage = "https://github.com/usestrix/firewall"
 # as an integration test; new tests/*.rs need an explicit [[test]] entry.
 autotests = false
 
+# Only Windows ships the service.
+[package.metadata.dist.binaries]
+x86_64-pc-windows-msvc = ["firewall", "firewall-service"]
+aarch64-apple-darwin = ["firewall"]
+x86_64-apple-darwin = ["firewall"]
+aarch64-unknown-linux-gnu = ["firewall"]
+x86_64-unknown-linux-gnu = ["firewall"]
+
 [lib]
 name = "firewall"
 # The macOS extension links a staticlib, built on demand:
@@ -19,6 +27,10 @@ crate-type = ["lib"]
 [[bin]]
 name = "firewall"
 path = "src/main.rs"
+
+[[bin]]
+name = "firewall-service"
+path = "src/bin/firewall-service.rs"
 
 [[example]]
 name = "proxy-test"
@@ -84,7 +96,19 @@ security-framework = "3.7.0"
 security-framework-sys = "2.17.0"
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+rama = { version = "0.4.0", features = ["dns-hickory"] }
+tokio = { version = "1.53.1", features = ["net"] }
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_System_Com",
+    "Win32_System_Environment",
+    "Win32_UI_Shell",
+] }
+windows-registry = "0.6.1"
+windows-service = "0.8.0"
 
 [dev-dependencies]
 tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }
