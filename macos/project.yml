@@ -133,7 +133,7 @@ targets:
               arm64|arm64e) triple=aarch64-apple-darwin ;;
               x86_64)       triple=x86_64-apple-darwin ;;
             esac
-            cargo build --bin firewall-uninstall --target $triple $([ "$CONFIGURATION" = Debug ] || echo --release)
+            cargo build --bin firewall-uninstall --features machine-wide --target $triple $([ "$CONFIGURATION" = Debug ] || echo --release)
             bins="$bins target/$triple/$CARGO_PROFILE/firewall-uninstall"
           done
           lipo -create $bins -output "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/firewall-uninstall"
