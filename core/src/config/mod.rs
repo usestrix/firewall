@@ -20,6 +20,8 @@ pub struct FirewallConfig {
     /// Packages never screened, by ecosystem: `{"npm": [{"name": "left-pad"}]}`.
     pub allow: HashMap<String, Vec<AllowedPackage>>,
     pub telemetry: bool,
+    /// Reports installs to, and takes blocks from, a Strix workspace.
+    pub platform: Option<PlatformConfig>,
     /// Not describable in the file yet, so this is always the built-in table.
     #[serde(skip)]
     pub registries: Vec<&'static Registry>,
@@ -31,6 +33,15 @@ pub struct AllowedPackage {
     pub name: String,
     /// Every version when absent.
     pub version: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlatformConfig {
+    pub api_key: String,
+    /// Where a self-hosted Strix lives.
+    #[serde(default = "hosted")]
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,6 +63,7 @@ impl Default for FirewallConfig {
             denylist: DenylistSource::default(),
             allow: HashMap::new(),
             telemetry: true,
+            platform: None,
             registries: BUILT_IN.to_vec(),
         }
     }
@@ -111,6 +123,10 @@ impl FirewallConfig {
         }
         hosts
     }
+}
+
+fn hosted() -> String {
+    "https://app.usestrix.com".into()
 }
 
 pub fn path() -> Option<PathBuf> {
