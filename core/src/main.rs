@@ -7,6 +7,8 @@ use std::process::exit;
 use tracing::{error, info};
 
 fn main() {
+    #[cfg(windows)]
+    firewall::os::windows::run_tray_if_launched();
     let matches = options().get_matches();
     if matches.subcommand_matches("serve").is_some() {
         firewall::init_logging("info");

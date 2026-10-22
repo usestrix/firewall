@@ -126,6 +126,13 @@
                             DiskId='1'
                             Source='$(var.CargoTargetBinDir)\firewall.exe'
                             KeyPath='yes'/>
+                        <!-- Starts the tray at every sign-in, through a headless console so none flashes. -->
+                        <RegistryValue
+                            Root='HKLM'
+                            Key='SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+                            Name='Strix Firewall'
+                            Type='string'
+                            Value='"[System64Folder]conhost.exe" --headless "[#exe0]"'/>
                     </Component>
                     <Component Id='binary1' Guid='*'>
                         <File

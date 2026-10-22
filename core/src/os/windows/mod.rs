@@ -4,10 +4,12 @@
 mod ca;
 mod service;
 mod tpm;
+mod tray;
 mod uninstall;
 
 pub use service::run as run_service;
 pub use tpm::CaKey;
+pub use tray::run_tray_if_launched;
 pub use uninstall::uninstall;
 
 use rama::error::BoxError;
