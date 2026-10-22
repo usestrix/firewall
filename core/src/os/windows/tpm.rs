@@ -1,63 +1,78 @@
-use super::wide;
 use rama::error::BoxError;
 use rama::tls::boring::core::bn::BigNum;
 use rama::tls::boring::core::ecdsa::EcdsaSig;
 use rama::tls::boring::core::sha::sha256;
 use rcgen::{Error, PublicKeyData, SignatureAlgorithm, SigningKey, PKCS_ECDSA_P256_SHA256};
-use std::io;
-use std::ptr;
-use windows_sys::core::HRESULT;
-use windows_sys::Win32::Foundation::NTE_BAD_KEYSET;
-use windows_sys::Win32::Security::Cryptography::*;
+use windows::core::{Owned, Result as WinResult, HSTRING};
+use windows::Win32::Foundation::{NTE_BAD_KEY, NTE_BAD_KEYSET};
+use windows::Win32::Security::Cryptography::*;
 
 const KEY_NAME: &str = "Strix Firewall CA";
 
-/// The private key never leaves the TPM.
-#[derive(Default)]
+/// A P-256 key held by the TPM. Signing asks the TPM to sign, so the private key never leaves it.
 pub struct CaKey {
-    key: usize,
-    provider: usize,
-    /// The uncompressed point, which is what rcgen writes into a SubjectPublicKeyInfo.
-    public: Vec<u8>,
+    // Fields drop in order, so the key handle closes before its provider's.
+    key_handle: Owned<NCRYPT_KEY_HANDLE>,
+    _provider_handle: Owned<NCRYPT_PROV_HANDLE>,
+    /// 0x04 || X || Y, the form rcgen writes into a certificate's SubjectPublicKeyInfo.
+    public_point: Vec<u8>,
 }
-
-// NCrypt handles may be used from any thread.
-unsafe impl Send for CaKey {}
-unsafe impl Sync for CaKey {}
 
 impl CaKey {
     /// A machine key, so the service and an elevated installer share it.
     pub fn load_or_create() -> Result<Self, BoxError> {
-        let flags = NCRYPT_MACHINE_KEY_FLAG;
-        let key = match open_tpm_key(KEY_NAME, flags)? {
-            Some(key) => key,
-            None => create_tpm_key(KEY_NAME, flags)?,
-        };
-        Ok(key)
+        match open_key(KEY_NAME, NCRYPT_MACHINE_KEY_FLAG)? {
+            Some(key) => Ok(key),
+            None => Ok(create_key(KEY_NAME, NCRYPT_MACHINE_KEY_FLAG)?),
+        }
     }
 
     /// A per-user key under a random name, which needs no elevation; `delete_from_tpm` it after.
-    pub fn create_test_key() -> io::Result<Self> {
-        create_tpm_key(&format!("Strix Firewall test {:016x}", rand::random::<u64>()), 0)
+    pub fn create_test_key() -> WinResult<Self> {
+        let name = format!("Strix Firewall test {:016x}", rand::random::<u64>());
+        create_key(&name, NCRYPT_FLAGS(0))
     }
 
-    /// Deletes the key itself, not just this handle to it.
-    pub fn delete_from_tpm(mut self) -> io::Result<()> {
-        check(unsafe { NCryptDeleteKey(std::mem::take(&mut self.key), 0) })
+    /// Deletes the key from the TPM, not just this handle to it.
+    pub fn delete_from_tpm(mut self) -> WinResult<()> {
+        // NCryptDeleteKey also frees the handle, so the Owned mustn't free it again.
+        let key_handle = std::mem::take(&mut *self.key_handle);
+        unsafe { NCryptDeleteKey(key_handle, 0) }
     }
-}
 
-impl Drop for CaKey {
-    fn drop(&mut self) {
-        for handle in [self.key, self.provider].into_iter().filter(|&h| h != 0) {
-            unsafe { NCryptFreeObject(handle) };
+    /// Takes both handles and reads the key's public point once, for rcgen.
+    fn from_handles(
+        provider_handle: Owned<NCRYPT_PROV_HANDLE>,
+        key_handle: Owned<NCRYPT_KEY_HANDLE>,
+    ) -> WinResult<Self> {
+        // A BCRYPT_ECCKEY_BLOB header, then X and Y.
+        const HEADER_LEN: usize = size_of::<BCRYPT_ECCKEY_BLOB>();
+        let mut blob = [0u8; HEADER_LEN + 64];
+        let mut blob_len = 0;
+        unsafe {
+            NCryptExportKey(
+                *key_handle,
+                None,
+                BCRYPT_ECCPUBLIC_BLOB,
+                None,
+                Some(&mut blob),
+                &mut blob_len,
+                NCRYPT_FLAGS(0),
+            )?
+        };
+        let (header, x_and_y) = blob.split_at(HEADER_LEN);
+        let is_p256 = header[..4] == BCRYPT_ECDSA_PUBLIC_P256_MAGIC.to_le_bytes();
+        if !is_p256 || blob_len as usize != blob.len() {
+            return Err(windows::core::Error::new(NTE_BAD_KEY, "key is not an ECDSA P-256 key"));
         }
+        let public_point = [&[0x04], x_and_y].concat();
+        Ok(CaKey { key_handle, _provider_handle: provider_handle, public_point })
     }
 }
 
 impl PublicKeyData for CaKey {
     fn der_bytes(&self) -> &[u8] {
-        &self.public
+        &self.public_point
     }
 
     fn algorithm(&self) -> &'static SignatureAlgorithm {
@@ -67,62 +82,72 @@ impl PublicKeyData for CaKey {
 
 impl SigningKey for CaKey {
     fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, Error> {
-        let digest = sha256(msg);
-        let (mut raw, mut len) = ([0u8; 64], 0);
-        let flags = NCRYPT_SILENT_FLAG;
-        check(unsafe {
-            NCryptSignHash(self.key, ptr::null(), digest.as_ptr(), 32, raw.as_mut_ptr(), 64, &mut len, flags)
-        })
-        .map_err(|_| Error::RemoteKeyError)?;
-        // NCrypt returns r || s; an X.509 signature holds DER SEQUENCE { r, s }.
-        let (r, s) = raw[..len as usize].split_at(len as usize / 2);
-        let sig = BigNum::from_slice(r)
+        let mut r_and_s = [0u8; 64];
+        let mut signature_len = 0;
+        let signed = unsafe {
+            NCryptSignHash(
+                *self.key_handle,
+                None,
+                &sha256(msg),
+                Some(&mut r_and_s),
+                &mut signature_len,
+                NCRYPT_SILENT_FLAG,
+            )
+        };
+        signed.map_err(|_| Error::RemoteKeyError)?;
+        // NCrypt returns r || s, each half the length; X.509 wants DER SEQUENCE { r, s }.
+        let (r, s) = r_and_s[..signature_len as usize].split_at(signature_len as usize / 2);
+        let der = BigNum::from_slice(r)
             .and_then(|r| EcdsaSig::from_private_components(r, BigNum::from_slice(s)?))
-            .and_then(|sig| sig.to_der());
-        sig.map_err(|_| Error::RemoteKeyError)
+            .and_then(|signature| signature.to_der());
+        der.map_err(|_| Error::RemoteKeyError)
     }
 }
 
-/// `None` if the TPM holds no such key.
-fn open_tpm_key(name: &str, flags: u32) -> io::Result<Option<CaKey>> {
-    let mut key = CaKey::default();
-    check(unsafe { NCryptOpenStorageProvider(&mut key.provider, MS_PLATFORM_CRYPTO_PROVIDER, 0) })?;
-    let name = wide(name);
-    match unsafe { NCryptOpenKey(key.provider, &mut key.key, name.as_ptr(), 0, flags | NCRYPT_SILENT_FLAG) } {
-        NTE_BAD_KEYSET => Ok(None),
-        status => {
-            check(status)?;
-            key.public = public_point(key.key)?;
-            Ok(Some(key))
-        }
+/// `None` if the TPM holds no key by that name.
+/// `scope` is `NCRYPT_MACHINE_KEY_FLAG`, or empty for the current user's keys.
+fn open_key(name: &str, scope: NCRYPT_FLAGS) -> WinResult<Option<CaKey>> {
+    let provider_handle = open_tpm_provider()?;
+    let mut key_handle = NCRYPT_KEY_HANDLE::default();
+    let opened = unsafe {
+        NCryptOpenKey(
+            *provider_handle,
+            &mut key_handle,
+            &HSTRING::from(name),
+            CERT_KEY_SPEC::default(), // legacy, unused by the TPM provider
+            scope | NCRYPT_SILENT_FLAG,
+        )
+    };
+    match opened {
+        Err(error) if error.code() == NTE_BAD_KEYSET => Ok(None),
+        Err(error) => Err(error),
+        Ok(()) => CaKey::from_handles(provider_handle, unsafe { Owned::new(key_handle) }).map(Some),
     }
 }
 
-fn create_tpm_key(name: &str, flags: u32) -> io::Result<CaKey> {
-    let mut key = CaKey::default();
-    check(unsafe { NCryptOpenStorageProvider(&mut key.provider, MS_PLATFORM_CRYPTO_PROVIDER, 0) })?;
-    let (algorithm, name) = (NCRYPT_ECDSA_P256_ALGORITHM, wide(name));
-    check(unsafe { NCryptCreatePersistedKey(key.provider, &mut key.key, algorithm, name.as_ptr(), 0, flags) })?;
-    check(unsafe { NCryptFinalizeKey(key.key, NCRYPT_SILENT_FLAG) })?;
-    key.public = public_point(key.key)?;
-    Ok(key)
+/// Generates the key inside the TPM, which never lets it out.
+fn create_key(name: &str, scope: NCRYPT_FLAGS) -> WinResult<CaKey> {
+    let provider_handle = open_tpm_provider()?;
+    let mut key_handle = NCRYPT_KEY_HANDLE::default();
+    unsafe {
+        NCryptCreatePersistedKey(
+            *provider_handle,
+            &mut key_handle,
+            NCRYPT_ECDSA_P256_ALGORITHM,
+            &HSTRING::from(name),
+            CERT_KEY_SPEC::default(), // legacy, unused by the TPM provider
+            scope,
+        )?
+    };
+    let key_handle = unsafe { Owned::new(key_handle) };
+    // Until finalized the key is only a handle; this generates and stores it.
+    unsafe { NCryptFinalizeKey(*key_handle, NCRYPT_SILENT_FLAG)? };
+    CaKey::from_handles(provider_handle, key_handle)
 }
 
-/// 0x04 || X || Y, from a BCRYPT_ECCKEY_BLOB header followed by X and Y.
-fn public_point(key: usize) -> io::Result<Vec<u8>> {
-    let (mut blob, mut len) = ([0u8; 8 + 64], 0);
-    let format = BCRYPT_ECCPUBLIC_BLOB;
-    check(unsafe { NCryptExportKey(key, 0, format, ptr::null(), blob.as_mut_ptr(), 72, &mut len, 0) })?;
-    if blob[..4] != BCRYPT_ECDSA_PUBLIC_P256_MAGIC.to_le_bytes() || len != 72 {
-        return Err(io::Error::other("key is not an ECDSA P-256 key"));
-    }
-    Ok([&[0x04], &blob[8..]].concat())
+/// The Microsoft Platform Crypto Provider, which keeps its keys in the TPM.
+fn open_tpm_provider() -> WinResult<Owned<NCRYPT_PROV_HANDLE>> {
+    let mut provider_handle = NCRYPT_PROV_HANDLE::default();
+    unsafe { NCryptOpenStorageProvider(&mut provider_handle, MS_PLATFORM_CRYPTO_PROVIDER, 0)? };
+    Ok(unsafe { Owned::new(provider_handle) })
 }
-
-fn check(status: HRESULT) -> io::Result<()> {
-    match status {
-        0 => Ok(()),
-        status => Err(io::Error::from_raw_os_error(status)),
-    }
-}
-
