@@ -10,7 +10,7 @@ settings:
     "CARGO_PROFILE[config=Debug]": debug
     "LIBRARY_SEARCH_PATHS[arch=arm64]": $(SRCROOT)/../core/target/aarch64-apple-darwin/$(CARGO_PROFILE)
     "LIBRARY_SEARCH_PATHS[arch=x86_64]": $(SRCROOT)/../core/target/x86_64-apple-darwin/$(CARGO_PROFILE)
-    ARCHS: arm64
+    ARCHS: arm64 x86_64
     "ONLY_ACTIVE_ARCH[config=Debug]": "YES"
     SWIFT_VERSION: "5.0"
     DEVELOPMENT_TEAM: ${TEAM}
@@ -127,5 +127,13 @@ targets:
           unset CC CXX CFLAGS CXXFLAGS
           export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           cd "$SRCROOT/../core"
-          cargo build --bin firewall-uninstall --target aarch64-apple-darwin $([ "$CONFIGURATION" = Debug ] || echo --release)
-          cp "target/aarch64-apple-darwin/$CARGO_PROFILE/firewall-uninstall" "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/"
+          bins=
+          for arch in $ARCHS; do
+            case $arch in
+              arm64|arm64e) triple=aarch64-apple-darwin ;;
+              x86_64)       triple=x86_64-apple-darwin ;;
+            esac
+            cargo build --bin firewall-uninstall --target $triple $([ "$CONFIGURATION" = Debug ] || echo --release)
+            bins="$bins target/$triple/$CARGO_PROFILE/firewall-uninstall"
+          done
+          lipo -create $bins -output "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/firewall-uninstall"
