@@ -11,9 +11,9 @@ homepage = "https://github.com/usestrix/firewall"
 # as an integration test; new tests/*.rs need an explicit [[test]] entry.
 autotests = false
 
-# Only Windows ships the service.
+# Only Windows ships the service and tray.
 [package.metadata.dist.binaries]
-x86_64-pc-windows-msvc = ["firewall", "firewall-service"]
+x86_64-pc-windows-msvc = ["firewall", "firewall-service", "firewall-tray"]
 aarch64-apple-darwin = ["firewall"]
 x86_64-apple-darwin = ["firewall"]
 aarch64-unknown-linux-gnu = ["firewall"]
@@ -38,6 +38,10 @@ path = "src/main.rs"
 [[bin]]
 name = "firewall-service"
 path = "src/bin/firewall-service.rs"
+
+[[bin]]
+name = "firewall-tray"
+path = "src/bin/firewall-tray.rs"
 
 [[bin]]
 name = "firewall-uninstall"
@@ -107,19 +111,14 @@ security-framework = "3.7.0"
 security-framework-sys = "2.17.0"
 
 [target.'cfg(windows)'.dependencies]
+muda = { version = "0.21.2", default-features = false }
+png = "0.18.1"
 rama = { version = "0.4.0", features = ["dns-hickory"] }
 schannel = "0.1.29"
 tokio = { version = "1.53.1", features = ["net"] }
 tracing-appender = "0.2.5"
-windows = { version = "0.62", features = [
-    "Win32_Foundation",
-    "Win32_Security",
-    "Win32_Security_Authorization",
-    "Win32_Security_Cryptography",
-    "Win32_System_Com",
-    "Win32_System_Environment",
-    "Win32_UI_Shell",
-] }
+tray-icon = { version = "0.26.1", default-features = false }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Cryptography", "Win32_System_Com", "Win32_System_Environment", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 windows-registry = "0.6.1"
 windows-service = "0.8.0"
 
