@@ -2,6 +2,7 @@
 //! LocalSystem service screens it as the macOS extension does.
 
 mod ca;
+mod pipe;
 mod service;
 mod tpm;
 mod tray;
