@@ -30,12 +30,12 @@ enum BlockAlert {
         if package.malicious {
             alert.alertStyle = .critical
             alert.messageText = "Blocked malware: \(package.label) (\(package.eco))"
-            alert.informativeText = "\(package.label) \(package.reason).\n\n"
+            setText(alert, "\(package.label) \(package.reason).\n\n"
                 + "It was not installed. Don't install it from another source. "
-                + "If you didn't expect this package, a dependency may be compromised; tell your security team."
+                + "If you didn't expect this package, a dependency may be compromised; tell your security team.")
         } else {
             alert.messageText = "Held back a new package"
-            alert.informativeText = "\(package.label) (\(package.eco)) \(package.reason)."
+            setText(alert, "\(package.label) (\(package.eco)) \(package.reason).")
             if package.trustable {
                 alert.addButton(withTitle: "Allow Once")
                 alert.addButton(withTitle: "Trust this version")
@@ -55,6 +55,22 @@ enum BlockAlert {
         alert.informativeText = "The install had already stopped waiting for it. Run it again to finish."
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
+    }
+
+    /// An alert's own text is plain, so this text goes in a selectable field, where its links open on click.
+    private static func setText(_ alert: NSAlert, _ text: String) {
+        let linked = NSMutableAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)])
+        let detector = try! NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            if let url = match.url { linked.addAttribute(.link, value: url, range: match.range) }
+        }
+        let field = NSTextField(wrappingLabelWithString: "")
+        field.allowsEditingTextAttributes = true
+        field.isSelectable = true
+        field.attributedStringValue = linked
+        field.preferredMaxLayoutWidth = 300
+        field.frame.size = field.fittingSize
+        alert.accessoryView = field
     }
 }
 
