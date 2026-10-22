@@ -162,7 +162,7 @@ async fn start_screening(status: &ServiceStatusHandle) -> Result<Vec<&'static st
                 resolver: resolver.clone(),
                 service: service.clone(),
             };
-            let upstream = ConsumeErrLayer::trace_as_debug().into_layer(upstream);
+            let upstream = ConsumeErrLayer::trace_as_warning().into_layer(upstream);
             tokio::spawn(listen_on(address, port, &exec)?.serve(upstream));
         }
     }
