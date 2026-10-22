@@ -36,7 +36,7 @@ pub struct Pattern {
 }
 
 /// Requests to the local server match on `prefix`; intercepted URLs match on `upstream`.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Registry {
     pub prefix: &'static str,
     pub eco: &'static str,
@@ -52,7 +52,7 @@ pub struct Registry {
 }
 
 /// A URL to fetch and a JSON pointer to the timestamp in its reply.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Published {
     pub url: &'static str,
     pub pointer: &'static str,
@@ -62,6 +62,11 @@ pub struct Published {
 impl Registry {
     pub fn host(&self) -> &'static str {
         host_of(self.upstream)
+    }
+
+    /// What the config file calls it.
+    pub fn name(&self) -> &'static str {
+        self.prefix.trim_matches('/')
     }
 }
 
