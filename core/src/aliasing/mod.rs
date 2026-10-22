@@ -1,5 +1,7 @@
 pub mod forward;
 pub mod managers;
+#[cfg(windows)]
+mod windows;
 
 pub use forward::spawn;
 pub use managers::*;
@@ -34,7 +36,8 @@ impl Invocation {
 
 pub fn run(port: u16, invocation: &Invocation, dir: Option<&Path>) -> std::io::Result<i32> {
     let proxy = crate::local_url(port, "");
-    let mut command = Command::new(resolve(&invocation.program)?);
+    let program = resolve(&invocation.program)?;
+    let mut command = Command::new(&program);
     command.args(invocation.arguments(&proxy));
     if let Some(dir) = dir {
         command.current_dir(dir);
@@ -42,7 +45,12 @@ pub fn run(port: u16, invocation: &Invocation, dir: Option<&Path>) -> std::io::R
     for (key, value) in managers::variables(&proxy) {
         command.env(key, value);
     }
-    Ok(command.status()?.code().unwrap_or(1))
+    #[cfg(windows)]
+    windows::prepare();
+    let status = command.status();
+    #[cfg(windows)]
+    let status = status.map_err(|error| windows::explain(error, &program));
+    Ok(status?.code().unwrap_or(1))
 }
 
 // Command::new only finds .exe on Windows; npm, pnpm and gem are .cmd shims found via PATHEXT.
