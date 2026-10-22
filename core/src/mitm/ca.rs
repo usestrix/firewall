@@ -61,12 +61,14 @@ pub fn crl(hosts: &[&str], signer: &dyn SigningKey) -> Result<Vec<u8>, BoxError>
 }
 
 pub const COMMON_NAME: &str = "Strix Firewall";
+/// With `COMMON_NAME`, how a trust store entry is recognized as ours.
+pub const ORGANIZATION: &str = "Strix";
 
 /// Also used by the issuer, whose issuer name must match the CA's subject.
 pub fn params(hosts: &[&str]) -> CertificateParams {
     let mut name = DistinguishedName::new();
     name.push(DnType::CommonName, COMMON_NAME);
-    name.push(DnType::OrganizationName, "Strix");
+    name.push(DnType::OrganizationName, ORGANIZATION);
 
     let mut params = CertificateParams::default();
     params.distinguished_name = name;
