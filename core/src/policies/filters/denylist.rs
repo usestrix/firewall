@@ -143,7 +143,7 @@ pub fn describe(advisories: &[&Advisory]) -> String {
 
 /// A failed fetch leaves the last good list in place; a list that never loaded is retried every tick.
 async fn watch(source: DenylistSource, lists: Arc<Lists>) {
-    let period = Duration::from_secs(source.poll_secs);
+    let period = Duration::from_secs(source.poll_secs.get());
     let mut seen = revision(&source, None).await;
     loop {
         tokio::time::sleep(period).await;
