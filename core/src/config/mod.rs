@@ -1,4 +1,4 @@
-use crate::policies::registries::{Registry, BUILT_IN};
+use crate::policies::registries::BUILT_IN;
 use directories::ProjectDirs;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -20,9 +20,8 @@ pub struct FirewallConfig {
     /// Packages exempt from the age check, by ecosystem: `{"npm": [{"name": "left-pad"}]}`.
     pub allow: HashMap<String, Vec<AllowedPackage>>,
     pub telemetry: bool,
-    /// Not describable in the file yet, so this is always the built-in table.
-    #[serde(skip)]
-    pub registries: Vec<&'static Registry>,
+    /// Mirrors laid out like a built-in registry, by its name: `{"npm": ["https://npm.example.com/"]}`.
+    pub registries: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,7 +51,7 @@ impl Default for FirewallConfig {
             denylist: DenylistSource::default(),
             allow: HashMap::new(),
             telemetry: true,
-            registries: BUILT_IN.to_vec(),
+            registries: HashMap::new(),
         }
     }
 }
@@ -87,7 +86,8 @@ impl FirewallConfig {
             };
             let invalid = |e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
             let layer: Value = serde_json::from_str(&text).map_err(invalid)?;
-            FirewallConfig::deserialize(&layer).map_err(invalid)?;
+            let config = FirewallConfig::deserialize(&layer).map_err(invalid)?;
+            check(&config).map_err(|e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display())))?;
             let Value::Object(layer) = layer else {
                 unreachable!("a config parses only from an object");
             };
@@ -98,18 +98,6 @@ impl FirewallConfig {
 
     pub fn local_url(&self, path: &str) -> String {
         crate::local_url(self.port, path)
-    }
-
-    /// Without building a `Firewall`, which needs a runtime.
-    pub fn hosts(&self) -> Vec<&'static str> {
-        let mut hosts: Vec<&'static str> = Vec::new();
-        for registry in &self.registries {
-            let host = registry.host();
-            if !hosts.contains(&host) {
-                hosts.push(host);
-            }
-        }
-        hosts
     }
 }
 
@@ -156,4 +144,14 @@ pub fn allow(path: &Path, eco: &str, name: &str, version: Option<&str>) -> std::
         std::fs::create_dir_all(dir)?;
     }
     std::fs::write(path, serde_json::to_string_pretty(&config)?)
+}
+
+/// What serde's types cannot say.
+fn check(config: &FirewallConfig) -> Result<(), String> {
+    for name in config.registries.keys() {
+        if !BUILT_IN.iter().any(|r| r.name() == name) {
+            return Err(format!("no built-in registry is named {name}"));
+        }
+    }
+    Ok(())
 }
