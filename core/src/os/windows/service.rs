@@ -26,6 +26,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use windows::Win32::Foundation::ERROR_GEN_FAILURE;
 use windows_service::service::*;
 use windows_service::service_control_handler::{
     self, ServiceControlHandlerResult, ServiceStatusHandle,
@@ -73,8 +74,12 @@ fn run_until_stopped() -> Result<(), BoxError> {
         | ServiceControl::Shutdown
         | ServiceControl::Pause
         | ServiceControl::Continue => {
-            let _ = control_sender.send(control);
-            ServiceControlHandlerResult::NoError
+            // Answered once handled, so a failed pause fails the caller's ControlService.
+            let (reply, handled) = tokio::sync::oneshot::channel();
+            let _ = control_sender.send((control, reply));
+            handled
+                .blocking_recv()
+                .unwrap_or(ServiceControlHandlerResult::NoError)
         }
         ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
         _ => ServiceControlHandlerResult::NotImplemented,
@@ -89,16 +94,26 @@ fn run_until_stopped() -> Result<(), BoxError> {
             }
         };
         // Only pausing removes our hosts entries; a stop or crash keeps them, failing closed.
-        while let Some(control) = control_receiver.recv().await {
+        while let Some((control, reply)) = control_receiver.recv().await {
             let (hosts, state) = match control {
                 ServiceControl::Pause => (&[][..], ServiceState::Paused),
                 ServiceControl::Continue => (&hosts[..], ServiceState::Running),
                 _ => break,
             };
-            match write_hosts_entries(hosts) {
-                Ok(()) => set_status(&status, state, false)?,
-                Err(error) => tracing::error!(%error, "could not rewrite the hosts file"),
-            }
+            let result = match write_hosts_entries(hosts) {
+                Ok(()) => {
+                    set_status(&status, state, false)?;
+                    ServiceControlHandlerResult::NoError
+                }
+                Err(error) => {
+                    tracing::error!(%error, "could not rewrite the hosts file");
+                    let code = error
+                        .raw_os_error()
+                        .map_or(ERROR_GEN_FAILURE.0, |code| code as u32);
+                    ServiceControlHandlerResult::Other(code)
+                }
+            };
+            let _ = reply.send(result);
         }
         Ok::<_, BoxError>(())
     });
