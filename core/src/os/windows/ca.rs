@@ -14,8 +14,8 @@ use windows::Win32::Security::*;
 /// SYSTEM and admins write, users only read, so no one else can plant a CA for node.
 const DATA_DIR_ACL: &str = concat!(
     "O:BA",               // owner: Administrators
-    "D:P",                // don't inherit ProgramData's rules, which let any user create files
-    "(A;OICI;FA;;;SY)",   // allow SYSTEM full control, inherited by everything inside
+    "D:P",                // protected: ignore ProgramData's rules, which let any user create files
+    "(A;OICI;FA;;;SY)",   // allow SYSTEM full control, inherited by files (OI) and subfolders (CI)
     "(A;OICI;FA;;;BA)",   // allow Administrators full control
     "(A;OICI;FRFX;;;BU)", // allow Users read and execute only
 );
@@ -65,6 +65,7 @@ impl RootStore {
     fn open() -> windows::core::Result<Self> {
         let flags =
             CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_LOCAL_MACHINE) | CERT_STORE_OPEN_EXISTING_FLAG;
+        // The system provider ignores the encoding type and takes the store name as its parameter.
         let store = unsafe {
             CertOpenStore(
                 CERT_STORE_PROV_SYSTEM_W,
