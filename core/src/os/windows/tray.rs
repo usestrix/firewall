@@ -144,7 +144,11 @@ impl Tray {
 }
 
 fn show_error(error: BoxError) {
-    let text = HSTRING::from(error.to_string());
+    let text = match error.source() {
+        Some(source) => format!("{error}: {source}"),
+        None => error.to_string(),
+    };
+    let text = HSTRING::from(text);
     unsafe { MessageBoxW(None, &text, w!("Strix Firewall"), MB_ICONERROR) };
 }
 
