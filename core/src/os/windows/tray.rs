@@ -3,6 +3,7 @@
 use super::*;
 use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use std::io::Cursor;
+use std::time::Duration;
 use tray_icon::{Icon, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::*;
@@ -14,6 +15,7 @@ use windows_service::service::{Service, ServiceAccess, ServiceState};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
 const MENU_PAUSE: &str = "pause";
+const MENU_RESTART: &str = "restart";
 const MENU_LOG: &str = "log";
 const MENU_QUIT: &str = "quit";
 const LOGO: &[u8] = include_bytes!("tray.png");
@@ -31,6 +33,7 @@ pub fn run() -> Result<(), BoxError> {
         &status,
         &PredefinedMenuItem::separator(),
         &pause,
+        &MenuItem::with_id(MENU_RESTART, "Restart", true, None),
         &MenuItem::with_id(MENU_LOG, "Open logs", true, None),
         &PredefinedMenuItem::separator(),
         &MenuItem::with_id(MENU_QUIT, "Quit", true, None),
@@ -123,6 +126,11 @@ impl Tray {
                 || Ok(open_service()?.resume().map(drop)?)
             }
             MENU_PAUSE => || Ok(open_service()?.start::<&str>(&[])?),
+            MENU_RESTART => {
+                // Off the UI thread, since stopping takes a while.
+                std::thread::spawn(|| restart().unwrap_or_else(show_error));
+                return;
+            }
             MENU_LOG => {
                 let log = HSTRING::from(data_dir().as_path());
                 let none = PCWSTR::null();
@@ -131,11 +139,13 @@ impl Tray {
             }
             _ => return,
         };
-        if let Err(error) = action() {
-            let text = HSTRING::from(error.to_string());
-            unsafe { MessageBoxW(None, &text, w!("Strix Firewall"), MB_ICONERROR) };
-        }
+        action().unwrap_or_else(show_error);
     }
+}
+
+fn show_error(error: BoxError) {
+    let text = HSTRING::from(error.to_string());
+    unsafe { MessageBoxW(None, &text, w!("Strix Firewall"), MB_ICONERROR) };
 }
 
 /// `None` when the service is not installed.
@@ -166,8 +176,26 @@ fn status_text(state: Option<ServiceState>) -> &'static str {
 
 fn open_service() -> Result<Service, BoxError> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let access = ServiceAccess::START | ServiceAccess::PAUSE_CONTINUE;
+    let access = ServiceAccess::QUERY_STATUS
+        | ServiceAccess::START
+        | ServiceAccess::STOP
+        | ServiceAccess::PAUSE_CONTINUE;
     Ok(manager.open_service(SERVICE_NAME, access)?)
+}
+
+/// Starting again re-reads the config.
+fn restart() -> Result<(), BoxError> {
+    let service = open_service()?;
+    if service.query_status()?.current_state != ServiceState::Stopped {
+        service.stop()?;
+    }
+    for _ in 0..60 {
+        if service.query_status()?.current_state == ServiceState::Stopped {
+            return Ok(service.start::<&str>(&[])?);
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    Err("The service did not stop.".into())
 }
 
 /// The alpha channel of the RGBA logo, and its width.
