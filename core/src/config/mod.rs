@@ -17,7 +17,7 @@ pub struct FirewallConfig {
     /// 0 turns the age check off.
     pub min_age_hours: u64,
     pub denylist: DenylistSource,
-    /// Packages never screened, by ecosystem: `{"npm": [{"name": "left-pad"}]}`.
+    /// Packages exempt from the age check, by ecosystem: `{"npm": [{"name": "left-pad"}]}`.
     pub allow: HashMap<String, Vec<AllowedPackage>>,
     pub telemetry: bool,
     /// Not describable in the file yet, so this is always the built-in table.
