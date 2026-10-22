@@ -3,12 +3,12 @@ use crate::mitm::{CertificateAuthority, COMMON_NAME, ORGANIZATION};
 use rama::tls::boring::core::nid::Nid;
 use rama::tls::boring::core::x509::X509;
 use rcgen::SigningKey;
+use schannel::cert_context::CertContext;
+use schannel::cert_store::{CertAdd, CertStore};
 use std::io;
 use std::path::Path;
 use tracing::warn;
-use windows::core::w;
 use windows::Win32::Security::Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT};
-use windows::Win32::Security::Cryptography::*;
 use windows::Win32::Security::*;
 
 /// SYSTEM and admins write, users only read, so no one else can plant a CA for node.
@@ -39,16 +39,8 @@ pub fn load_or_create_ca(
     };
     // Idempotent, and the registry value can outlive the certificate.
     let der = ca.crt.to_der()?;
-    let store = RootStore::open()?;
-    unsafe {
-        CertAddEncodedCertificateToStore(
-            Some(store.0),
-            X509_ASN_ENCODING,
-            &der,
-            CERT_STORE_ADD_REPLACE_EXISTING,
-            None,
-        )?
-    };
+    let mut store = CertStore::open_local_machine("Root")?;
+    store.add_cert(&CertContext::new(&der)?, CertAdd::ReplaceExisting)?;
     remove_our_cas_except(Some(&der))?;
     // For clients that read no trust store; screening still works for the rest if this fails.
     let exported = secure_data_dir().and_then(|dir| std::fs::write(dir.join("ca.pem"), &ca.pem));
@@ -56,33 +48,6 @@ pub fn load_or_create_ca(
         warn!(%error, "could not export the CA");
     }
     Ok(ca)
-}
-
-/// LocalMachine\Root, closed on drop.
-struct RootStore(HCERTSTORE);
-
-impl RootStore {
-    fn open() -> windows::core::Result<Self> {
-        let flags =
-            CERT_OPEN_STORE_FLAGS(CERT_SYSTEM_STORE_LOCAL_MACHINE) | CERT_STORE_OPEN_EXISTING_FLAG;
-        // The system provider ignores the encoding type and takes the store name as its parameter.
-        let store = unsafe {
-            CertOpenStore(
-                CERT_STORE_PROV_SYSTEM_W,
-                CERT_QUERY_ENCODING_TYPE(0),
-                None,
-                flags,
-                Some(w!("ROOT").as_ptr().cast()),
-            )?
-        };
-        Ok(RootStore(store))
-    }
-}
-
-impl Drop for RootStore {
-    fn drop(&mut self) {
-        let _ = unsafe { CertCloseStore(Some(self.0), 0) };
-    }
 }
 
 /// Created on first use, its owner and ACL reset every time. One a user made first, or a link,
@@ -135,26 +100,12 @@ fn owned_by_admins(path: &Path) -> windows::core::Result<bool> {
 
 /// Drops every CA of ours from LocalMachine\Root but `keep`.
 pub(super) fn remove_our_cas_except(keep: Option<&[u8]>) -> Result<(), BoxError> {
-    let store = RootStore::open()?;
-    let mut cert: *const CERT_CONTEXT = std::ptr::null();
-    loop {
-        // Frees the previous context.
-        cert = unsafe { CertEnumCertificatesInStore(store.0, Some(cert)) };
-        let Some(context) = (unsafe { cert.as_ref() }) else {
-            return Ok(());
-        };
-        let der = unsafe {
-            std::slice::from_raw_parts(context.pbCertEncoded, context.cbCertEncoded as usize)
-        };
-        if keep != Some(der) && is_our_ca(der) {
-            // Deleting frees the context, which enumeration still needs, so delete a copy.
-            let copy = unsafe { CertDuplicateCertificateContext(Some(cert)) };
-            if let Err(error) = unsafe { CertDeleteCertificateFromStore(copy) } {
-                let _ = unsafe { CertFreeCertificateContext(Some(cert)) };
-                return Err(error.into());
-            }
+    for cert in CertStore::open_local_machine("Root")?.certs() {
+        if keep != Some(cert.to_der()) && is_our_ca(cert.to_der()) {
+            cert.delete()?;
         }
     }
+    Ok(())
 }
 
 fn is_our_ca(der: &[u8]) -> bool {
