@@ -39,14 +39,14 @@ fn a_later_file_wins_and_allow_lists_add_up() {
 }
 
 #[tokio::test]
-async fn an_allowed_version_skips_the_filters() {
-    // An unreachable denylist would otherwise leave the package unchecked.
+async fn an_allowed_version_is_still_checked_for_malware() {
+    // The unreachable denylist shows that it still runs.
     let config = r#"{"allow": {"go": [{"name": "golang.org/x/net", "version": "v0.20.0"}]}, "denylist": {"base": "http://127.0.0.1:1"}}"#;
     let firewall = Firewall::new(serde_json::from_str(config).expect("parses"));
     let (registry, _) = firewall.match_on("/go/golang.org/x/net/@v/list", |r| r.prefix).expect("go");
-    let pkg = |version: &str| Package { name: "golang.org/x/net".into(), version: Some(version.into()) };
-    assert!(consult(&firewall, registry, &pkg("0.20.0")).await.is_none());
-    assert!(consult(&firewall, registry, &pkg("0.21.0")).await.is_some());
+    let pkg = Package { name: "golang.org/x/net".into(), version: Some("0.20.0".into()) };
+    let verdict = consult(&firewall, registry, &pkg).await;
+    assert_eq!(verdict.map(|(filter, _)| filter), Some("denylist"));
 }
 
 #[tokio::test]

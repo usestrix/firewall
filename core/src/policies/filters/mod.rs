@@ -25,16 +25,18 @@ pub trait Filter: Send + Sync {
 }
 
 /// Asks every filter. A `Deny` wins; failing that, the first filter that could not tell.
+/// An allowed package skips only the age check, so malware is never let through.
 pub async fn consult(
     firewall: &Firewall,
     registry: &'static Registry,
     pkg: &Package,
 ) -> Option<(&'static str, Verdict)> {
-    if allowed(firewall, registry, pkg) {
-        return None;
-    }
+    let allowed = allowed(firewall, registry, pkg);
     let mut unsure = None;
     for filter in firewall.filters() {
+        if allowed && filter.name() == "age" {
+            continue;
+        }
         match filter.check(registry, pkg).await {
             Verdict::Allow => continue,
             Verdict::Deny(reason) => return Some((filter.name(), Verdict::Deny(reason))),
