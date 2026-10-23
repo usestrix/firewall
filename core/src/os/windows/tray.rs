@@ -11,6 +11,7 @@ use std::time::Duration;
 use tray_icon::{Icon, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use windows::core::{w, HRESULT, PCWSTR};
 use windows::Win32::Foundation::*;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
 use windows::Win32::System::Threading::*;
 use windows::Win32::UI::Controls::*;
@@ -296,6 +297,8 @@ impl Tray {
 
 const ALLOW_ONCE_BUTTON: i32 = 100;
 const TRUST_BUTTON: i32 = 101;
+/// `firewall.rc`'s icon, embedded by `build.rs`.
+const STRIX_ICON: PCWSTR = PCWSTR(1 as _);
 
 /// `Some(true)` if the user chose to trust it, `Some(false)` to allow it once.
 /// A task dialog, as a message box can't have both buttons.
@@ -308,7 +311,7 @@ fn alert(package: &BlockedPackage) -> Option<bool> {
             + "package, a dependency may be compromised; tell your security team.";
         (title, text, TD_ERROR_ICON)
     } else {
-        ("Held back a new package".to_owned(), text, TD_INFORMATION_ICON)
+        ("Held back a new package".to_owned(), text, STRIX_ICON)
     };
     let button = |id, text| TASKDIALOG_BUTTON { nButtonID: id, pszButtonText: text };
     let allow = [button(ALLOW_ONCE_BUTTON, w!("Allow Once")), button(TRUST_BUTTON, w!("Trust this version"))];
@@ -316,6 +319,8 @@ fn alert(package: &BlockedPackage) -> Option<bool> {
     let (title, text) = (HSTRING::from(title), HSTRING::from(text));
     let dialog = TASKDIALOGCONFIG {
         cbSize: size_of::<TASKDIALOGCONFIG>() as u32,
+        // Where `STRIX_ICON` is loaded from; the `TD_` icons are Windows'.
+        hInstance: unsafe { GetModuleHandleW(None) }.ok()?.into(),
         dwCommonButtons: TDCBF_CLOSE_BUTTON,
         pszWindowTitle: w!("Strix Firewall"),
         Anonymous1: TASKDIALOGCONFIG_0 { pszMainIcon: icon },
