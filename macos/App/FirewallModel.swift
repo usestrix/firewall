@@ -230,7 +230,7 @@ final class FirewallModel: NSObject, ObservableObject {
                     blocked.append(package)
                     if let allowance = BlockAlert.show(package) { await allow(package, allowance) }
                 }
-                blocked = Array(blocked.suffix(10))
+                if blocked.count > 10 { blocked.removeFirst(blocked.count - 10) }
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
