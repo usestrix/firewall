@@ -85,6 +85,15 @@ async fn a_mirror_is_screened_like_the_registry_it_copies() {
 }
 
 #[tokio::test]
+async fn a_pypi_mirror_screens_the_files_it_serves() {
+    let config = r#"{"registries": {"pypi": ["https://art.example.com/pypi/"]}}"#;
+    let firewall = Firewall::new(serde_json::from_str(config).expect("parses"));
+    let url = "https://art.example.com/pypi/packages/ab/cd/six-1.16.0-py2.py3-none-any.whl";
+    let (registry, rest) = firewall.match_on(url, |r| r.upstream).expect("the mirror");
+    assert_eq!(firewall.resolve(registry, rest).pkg.map(|p| p.label()), Some("six@1.16.0".into()));
+}
+
+#[tokio::test]
 async fn an_allowed_version_is_still_checked_for_malware() {
     // The unreachable denylist shows that it still runs.
     let config = r#"{"allow": {"go": [{"name": "golang.org/x/net", "version": "v0.20.0"}]}, "denylist": {"base": "http://127.0.0.1:1"}}"#;
