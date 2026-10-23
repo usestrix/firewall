@@ -1,4 +1,4 @@
-# Strix Firewall
+# [Strix's Dependency Firewall](http://strix.ai/blog/firewall-announcement)
 
 Stops malicious packages before they install. Built by [Strix](https://usestrix.com).
 
