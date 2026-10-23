@@ -23,11 +23,7 @@ static TELEMETRY: LazyLock<Option<Telemetry>> = LazyLock::new(|| {
         return None;
     }
     let session = format!("{:016x}", rand::random::<u64>());
-    Some(Telemetry {
-        key,
-        session,
-        events: Mutex::default(),
-    })
+    Some(Telemetry { key, session, events: Mutex::default() })
 });
 
 /// How the firewall is running: "extension", "service", "wrapper" or "proxy".

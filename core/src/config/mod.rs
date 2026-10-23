@@ -86,10 +86,13 @@ impl FirewallConfig {
                 Err(e) if e.kind() == ErrorKind::NotFound => continue,
                 Err(e) => return Err(Error::new(e.kind(), format!("{}: {e}", path.display()))),
             };
-            let invalid = |e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
+            let invalid =
+                |e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
             let layer: Value = serde_json::from_str(&text).map_err(invalid)?;
             let config = FirewallConfig::deserialize(&layer).map_err(invalid)?;
-            check(&config).map_err(|e| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display())))?;
+            check(&config).map_err(|e| {
+                Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()))
+            })?;
             let Value::Object(layer) = layer else {
                 unreachable!("a config parses only from an object");
             };
@@ -122,7 +125,8 @@ fn merge(base: &mut Map<String, Value>, top: Map<String, Value>) {
 
 /// Adds an `allow` entry to the file, leaving the rest of it as written.
 pub fn allow(path: &Path, eco: &str, name: &str, version: &str) -> std::io::Result<()> {
-    let invalid = |e: String| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
+    let invalid =
+        |e: String| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
     let mut config = match std::fs::read_to_string(path) {
         Ok(text) => serde_json::from_str(&text).map_err(|e| invalid(e.to_string()))?,
         Err(e) if e.kind() == ErrorKind::NotFound => json!({}),

@@ -50,9 +50,7 @@ pub fn run() -> Result<(), BoxError> {
         &MenuItem::with_id(MENU_QUIT, "Quit", true, None),
     ])?;
     let (logo, logo_size) = logo_mask()?;
-    let icon = TrayIconBuilder::new()
-        .with_menu(Box::new(menu.clone()))
-        .build()?;
+    let icon = TrayIconBuilder::new().with_menu(Box::new(menu.clone())).build()?;
     let window = HWND(icon.window_handle());
     let mut tray = Tray {
         icon,
@@ -84,11 +82,7 @@ pub fn run() -> Result<(), BoxError> {
         }
         while let Ok(event) = TrayIconEvent::receiver().try_recv() {
             // The menu opens on release, so this keeps it current.
-            if let TrayIconEvent::Click {
-                button_state: MouseButtonState::Down,
-                ..
-            } = event
-            {
+            if let TrayIconEvent::Click { button_state: MouseButtonState::Down, .. } = event {
                 tray.update();
             }
         }
@@ -218,11 +212,7 @@ impl Tray {
         }
         let _ = self.menu.insert(&self.blocked_separator, BLOCKED_AT);
         for (i, package) in self.blocked.iter().enumerate() {
-            let verb = if package.malicious() {
-                "Blocked"
-            } else {
-                "Held back"
-            };
+            let verb = if package.malicious() { "Blocked" } else { "Held back" };
             let reason = if package.malicious() {
                 format!("Malicious: {}", package.reason)
             } else {
@@ -230,11 +220,8 @@ impl Tray {
             };
             let reason = MenuItem::new(reason, false, None);
             let once = MenuItem::with_id(format!("{ALLOW_ONCE}:{i}"), "Allow Once", true, None);
-            let items: &[&dyn IsMenuItem] = if package.trustable() {
-                &[&reason, &once]
-            } else {
-                &[&reason]
-            };
+            let items: &[&dyn IsMenuItem] =
+                if package.trustable() { &[&reason, &once] } else { &[&reason] };
             let label = format!("{verb} {}", package.label());
             if let Ok(item) = Submenu::with_items(label, true, items) {
                 let _ = self.menu.insert(&item, BLOCKED_AT + 1 + i);
@@ -316,10 +303,7 @@ fn allow_once(package: BlockedPackage, allowed: &Sender<BlockedPackage>) {
 
 /// One request per connection, as the service answers.
 fn ask_service(request: &str) -> Result<String, BoxError> {
-    let mut pipe = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(PIPE)?;
+    let mut pipe = std::fs::OpenOptions::new().read(true).write(true).open(PIPE)?;
     // Any program can create the pipe if it gets there before the service.
     let mut server = 0;
     unsafe { GetNamedPipeServerProcessId(HANDLE(pipe.as_raw_handle()), &mut server)? };
@@ -345,9 +329,7 @@ fn show_error(error: BoxError) {
 fn service_status() -> Option<ServiceStatus> {
     let manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).ok()?;
-    let service = manager
-        .open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS)
-        .ok()?;
+    let service = manager.open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS).ok()?;
     service.query_status().ok()
 }
 
@@ -356,8 +338,7 @@ fn light_taskbar() -> bool {
     let Ok(key) = CURRENT_USER.open(personalize) else {
         return false;
     };
-    key.get_u32("SystemUsesLightTheme")
-        .is_ok_and(|light| light == 1)
+    key.get_u32("SystemUsesLightTheme").is_ok_and(|light| light == 1)
 }
 
 fn status_text(state: Option<ServiceState>) -> &'static str {

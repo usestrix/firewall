@@ -14,7 +14,8 @@ async fn allowing_once_releases_the_held_download() {
 
     let held = tokio::spawn(async move { block("npm", &pkg, "age", "is new").await });
     let id = loop {
-        let blocks: serde_json::Value = serde_json::from_str(&answer(&firewall, config, "blocks")).unwrap();
+        let blocks: serde_json::Value =
+            serde_json::from_str(&answer(&firewall, config, "blocks")).unwrap();
         if let Some(id) = blocks[0]["id"].as_u64() {
             break id;
         }
@@ -22,6 +23,12 @@ async fn allowing_once_releases_the_held_download() {
     };
     assert_eq!(answer(&firewall, config, &format!("allow-once {id}")), "ok");
     assert!(held.await.unwrap(), "the waiting download goes through");
-    assert!(firewall.age_check_lifted("npm", |p| p.name == "left-pad"), "and the rest of the install");
-    assert!(!block("npm", &Package { name: "evil".into(), version: None }, "denylist", "is malware").await);
+    assert!(
+        firewall.age_check_lifted("npm", |p| p.name == "left-pad"),
+        "and the rest of the install"
+    );
+    assert!(
+        !block("npm", &Package { name: "evil".into(), version: None }, "denylist", "is malware")
+            .await
+    );
 }

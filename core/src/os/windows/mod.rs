@@ -48,9 +48,7 @@ pub fn system_config() -> Option<PathBuf> {
 /// In the folder Windows reads it from, normally %SystemRoot%\System32\drivers\etc.
 fn hosts_file() -> PathBuf {
     let key = r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters";
-    let configured = LOCAL_MACHINE
-        .open(key)
-        .and_then(|key| key.get_hstring("DataBasePath"));
+    let configured = LOCAL_MACHINE.open(key).and_then(|key| key.get_hstring("DataBasePath"));
     let dir = match configured {
         Ok(dir) => expand_environment(&dir),
         Err(_) => known_folder(&FOLDERID_System).join(r"drivers\etc"),
@@ -71,17 +69,12 @@ fn expand_environment(path: &HSTRING) -> PathBuf {
     let mut expanded = vec![0; len as usize];
     let len = unsafe { ExpandEnvironmentStringsW(path, Some(&mut expanded)) };
     // Less the terminating null.
-    PathBuf::from(String::from_utf16_lossy(
-        &expanded[..(len as usize).saturating_sub(1)],
-    ))
+    PathBuf::from(String::from_utf16_lossy(&expanded[..(len as usize).saturating_sub(1)]))
 }
 
 /// From 127.0.0.3, leaving 127.0.0.1 to whatever else serves locally.
 fn loopback_addresses(hosts: &[&'static str]) -> Vec<(Ipv4Addr, &'static str)> {
-    (3..)
-        .zip(hosts)
-        .map(|(i, host)| (Ipv4Addr::new(127, 0, 0, i), *host))
-        .collect()
+    (3..).zip(hosts).map(|(i, host)| (Ipv4Addr::new(127, 0, 0, i), *host)).collect()
 }
 
 /// Points each host at its listener, replacing the lines we wrote before; with none, only removes
@@ -91,11 +84,7 @@ fn write_hosts_entries(hosts: &[&'static str]) -> std::io::Result<()> {
     let old = std::fs::read(hosts_file())?;
     let ours = |line: &&[u8]| line.trim_ascii_end().ends_with(TAG.as_bytes());
     let lines = old.split_inclusive(|&byte| byte == b'\n');
-    let mut new: Vec<u8> = lines
-        .filter(|line| !ours(line))
-        .flatten()
-        .copied()
-        .collect();
+    let mut new: Vec<u8> = lines.filter(|line| !ours(line)).flatten().copied().collect();
     if !new.is_empty() && !new.ends_with(b"\n") {
         new.extend_from_slice(b"\r\n");
     }
@@ -120,11 +109,7 @@ fn security_descriptor(sddl: &str) -> windows::core::Result<Owned<HLOCAL>> {
 }
 
 fn read_registry_string(key: &str, value: &str) -> Result<Option<String>, BoxError> {
-    none_if_missing(
-        LOCAL_MACHINE
-            .open(key)
-            .and_then(|key| key.get_string(value)),
-    )
+    none_if_missing(LOCAL_MACHINE.open(key).and_then(|key| key.get_string(value)))
 }
 
 /// `None` for a missing key or value.

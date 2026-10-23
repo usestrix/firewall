@@ -75,8 +75,8 @@ fn create() -> Result<SecKey, BoxError> {
         .set_key_type(KeyType::ec_sec_prime_random())
         .set_token(Token::SecureEnclave)
         .set_access_control(access);
-    let key = SecKey::new(&options)
-        .map_err(|e| format!("secure enclave key generation failed: {e}"))?;
+    let key =
+        SecKey::new(&options).map_err(|e| format!("secure enclave key generation failed: {e}"))?;
 
     let blob = key
         .attributes()
@@ -102,7 +102,10 @@ fn load(blob: &[u8]) -> Result<SecKey, BoxError> {
                 CFString::wrap_under_get_rule(kSecAttrKeyClass),
                 CFString::wrap_under_get_rule(kSecAttrKeyClassPrivate).into_CFType(),
             ),
-            (CFString::from_static_string(TOKEN_OBJECT_ID), CFData::from_buffer(blob).into_CFType()),
+            (
+                CFString::from_static_string(TOKEN_OBJECT_ID),
+                CFData::from_buffer(blob).into_CFType(),
+            ),
         ])
     };
     let mut error = ptr::null_mut();

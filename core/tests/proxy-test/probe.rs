@@ -36,7 +36,8 @@ pub fn all(port: u16) -> Vec<(&'static str, Outcome)> {
 fn run(probe: &Probe, port: u16) -> Outcome {
     let args = probe.args.iter().map(|arg| arg.to_string()).collect();
     let dir = probe.setup.and_then(|prepare| prepare());
-    match aliasing::run(port, &Invocation::new(probe.manager.command.into(), args), dir.as_deref()) {
+    match aliasing::run(port, &Invocation::new(probe.manager.command.into(), args), dir.as_deref())
+    {
         Ok(0) => Outcome::Ok,
         Ok(_) => Outcome::Failed,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Outcome::Absent,

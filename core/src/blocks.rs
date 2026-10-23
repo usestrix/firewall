@@ -83,7 +83,10 @@ fn record(
     let holds = filter == "age" && watched;
     // A repeat fetch of a held package waits on the same answer.
     let waiting = blocks.held.iter().find(|(held, wake)| {
-        wake.receiver_count() > 0 && held.eco == eco && held.name == pkg.name && held.version == pkg.version
+        wake.receiver_count() > 0
+            && held.eco == eco
+            && held.name == pkg.name
+            && held.version == pkg.version
     });
     if let (true, Some((_, wake))) = (holds, waiting) {
         return Some(wake.subscribe());

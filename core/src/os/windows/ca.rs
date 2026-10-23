@@ -37,9 +37,7 @@ pub fn load_or_create_ca(
         None => {
             warn!(?hosts, "minting a new CA");
             let ca = CertificateAuthority::generate(hosts, signer)?;
-            LOCAL_MACHINE
-                .create(REGISTRY_KEY)?
-                .set_string("ca", ca.to_blob(hosts))?;
+            LOCAL_MACHINE.create(REGISTRY_KEY)?.set_string("ca", ca.to_blob(hosts))?;
             // Windows discards CRLs it cached before now, in case an old CA's is cached at our URL.
             let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos() / 100
                 + FILETIME_UNIX_EPOCH;
@@ -119,9 +117,7 @@ fn owned_by_admins(path: &Path) -> windows::core::Result<bool> {
         .ok()?
     };
     let admins = [WinBuiltinAdministratorsSid, WinLocalSystemSid];
-    let owned = admins
-        .into_iter()
-        .any(|sid| unsafe { IsWellKnownSid(owner, sid) }.as_bool());
+    let owned = admins.into_iter().any(|sid| unsafe { IsWellKnownSid(owner, sid) }.as_bool());
     // `owner` points into the descriptor, so it is freed last.
     unsafe { LocalFree(Some(HLOCAL(descriptor.0))) };
     Ok(owned)

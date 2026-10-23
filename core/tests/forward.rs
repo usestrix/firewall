@@ -49,7 +49,8 @@ fn a_plain_http_upstream_is_not_upgraded() {
 
     let port = aliasing::spawn(0, FirewallConfig::default()).expect("spawn");
     let mut proxy = TcpStream::connect(("127.0.0.1", port)).expect("connect");
-    let request = format!("GET http://{addr}/x HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+    let request =
+        format!("GET http://{addr}/x HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
     proxy.write_all(request.as_bytes()).expect("write");
     let mut response = String::new();
     proxy.read_to_string(&mut response).expect("read");
