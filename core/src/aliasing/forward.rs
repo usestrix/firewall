@@ -80,6 +80,7 @@ async fn handle(req: Request, firewall: &Firewall) -> Result<Response, Infallibl
         warn!(method = %req.method(), uri = %req.uri(), "unroutable, expected an absolute URL");
         return Ok(text(400, "firewall: expected an absolute URL\n"));
     };
+    let url = firewall.mirrored(url);
 
     let reason = policies::screen(&url, firewall).await;
     telemetry::screened(firewall, &url, reason.as_deref());
@@ -129,6 +130,9 @@ pub fn downgrade(firewall: &Firewall, body: Vec<u8>) -> Vec<u8> {
         Ok(text) => text,
         Err(raw) => return raw.into_bytes(),
     };
+    for (upstream, mirror) in firewall.mirrors() {
+        text = text.replace(mirror, upstream);
+    }
     for host in firewall.hosts() {
         text = text.replace(&format!("https://{host}"), &format!("http://{host}"));
     }
