@@ -308,9 +308,10 @@ fn alert(package: &BlockedPackage) -> Option<bool> {
         button(TRUST_BUTTON, w!("Trust this version")),
     ];
     let buttons: &[_] = if package.trustable() { &allow } else { &[] };
-    let (title, text) = (HSTRING::from(title), HSTRING::from(text));
+    let (title, text) = (HSTRING::from(title), HSTRING::from(linked(&text)));
     let dialog = TASKDIALOGCONFIG {
         cbSize: size_of::<TASKDIALOGCONFIG>() as u32,
+        dwFlags: TDF_ENABLE_HYPERLINKS,
         // Where `STRIX_ICON` is loaded from; the `TD_` icons are Windows'.
         hInstance: unsafe { GetModuleHandleW(None) }.ok()?.into(),
         dwCommonButtons: TDCBF_CLOSE_BUTTON,
@@ -333,17 +334,43 @@ fn alert(package: &BlockedPackage) -> Option<bool> {
 }
 
 /// Asks for the foreground, as `MB_SETFOREGROUND` did; Windows may still leave it behind.
+/// Opens the links `linked` made, in the browser.
 unsafe extern "system" fn on_dialog(
     window: HWND,
     event: TASKDIALOG_NOTIFICATIONS,
     _: WPARAM,
-    _: LPARAM,
+    link: LPARAM,
     _: isize,
 ) -> HRESULT {
     if event == TDN_CREATED {
         let _ = unsafe { SetForegroundWindow(window) };
+    } else if event == TDN_HYPERLINK_CLICKED {
+        let link = PCWSTR(link.0 as *const u16);
+        // Only web pages, whatever a block's reason contains.
+        let web = unsafe { link.to_string() }
+            .is_ok_and(|link| link.starts_with("https://") || link.starts_with("http://"));
+        if web {
+            let none = PCWSTR::null();
+            unsafe { ShellExecuteW(None, w!("open"), link, none, none, SW_SHOWNORMAL) };
+        }
     }
     S_OK
+}
+
+/// A task dialog's markup for the text, with each URL a link.
+fn linked(text: &str) -> String {
+    let mut marked = String::new();
+    let mut rest = text;
+    while let Some(start) =
+        ["https://", "http://"].iter().filter_map(|scheme| rest.find(scheme)).min()
+    {
+        let end = rest[start..].find(|c: char| c.is_whitespace() || c == ',' || c == ')');
+        let url = rest[start..end.map_or(rest.len(), |end| start + end)].trim_end_matches('.');
+        marked += &rest[..start];
+        marked += &format!("<a href=\"{url}\">{url}</a>");
+        rest = &rest[start + url.len()..];
+    }
+    marked + rest
 }
 
 /// Trusting writes the config for every user, so it goes through a UAC prompt.
