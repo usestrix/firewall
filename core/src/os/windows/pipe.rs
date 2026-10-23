@@ -1,5 +1,5 @@
-//! How the tray asks the service what it blocked, and allows a new package once, as the macOS
-//! app messages its extension.
+//! How the tray asks the service what it blocked, and allows a new package, as the macOS app
+//! messages its extension.
 
 use super::{config_file, security_descriptor};
 use crate::{blocks, Firewall};
@@ -11,8 +11,8 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use windows::core::{Owned, PWSTR};
 use windows::Win32::Foundation::HANDLE;
-use windows::Win32::Security::SECURITY_ATTRIBUTES;
-use windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
+use windows::Win32::Security::*;
+use windows::Win32::System::Pipes::{GetNamedPipeClientProcessId, ImpersonateNamedPipeClient};
 use windows::Win32::System::Threading::*;
 
 pub(super) const PIPE: &str = r"\\.\pipe\StrixFirewall";
@@ -59,8 +59,7 @@ async fn answer(client: NamedPipeServer, firewall: &Firewall) -> Result<(), BoxE
     // Only the app can message the macOS extension; here any program could connect.
     let reply = if !client_is_tray(client.get_ref())? {
         "error: only the tray can ask".to_owned()
-    } else if request.starts_with("allow ") {
-        // Trusting writes the config for every user, so it is left to an administrator.
+    } else if request.starts_with("allow ") && !client_is_admin(client.get_ref())? {
         "error: trusting a package takes an administrator".to_owned()
     } else {
         blocks::answer(firewall, &config_file(), request)
@@ -83,4 +82,21 @@ fn client_is_tray(client: &NamedPipeServer) -> Result<bool, BoxError> {
     let tray = std::env::current_exe()?.with_file_name("firewall-tray.exe");
     // Windows paths ignore case.
     Ok(path.to_lowercase() == tray.to_string_lossy().to_lowercase())
+}
+
+/// Elevated, as only an elevated token has the Administrators group enabled.
+fn client_is_admin(client: &NamedPipeServer) -> windows::core::Result<bool> {
+    let mut sid = [0u32; SECURITY_MAX_SID_SIZE as usize / 4];
+    let admins = PSID(sid.as_mut_ptr().cast());
+    let mut size = SECURITY_MAX_SID_SIZE;
+    unsafe { CreateWellKnownSid(WinBuiltinAdministratorsSid, None, Some(admins), &mut size)? };
+    unsafe { ImpersonateNamedPipeClient(HANDLE(client.as_raw_handle()))? };
+    let mut member = false.into();
+    let checked = unsafe { CheckTokenMembership(None, admins, &mut member) };
+    // Carrying on as the client would be worse than stopping.
+    if unsafe { RevertToSelf() }.is_err() {
+        std::process::abort();
+    }
+    checked?;
+    Ok(member.as_bool())
 }
