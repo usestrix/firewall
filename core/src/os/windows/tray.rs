@@ -1,17 +1,21 @@
 //! The notification-area icon, started at sign-in as the menu bar app is on macOS.
 
+use super::pipe::PIPE;
 use super::*;
-use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
-use std::io::Cursor;
+use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use serde::Deserialize;
+use std::io::{BufRead, BufReader, Cursor, Write};
+use std::os::windows::io::AsRawHandle;
 use std::time::Duration;
 use tray_icon::{Icon, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::*;
+use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows_registry::CURRENT_USER;
-use windows_service::service::{Service, ServiceAccess, ServiceState};
+use windows_service::service::{Service, ServiceAccess, ServiceState, ServiceStatus};
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
 const MENU_PAUSE: &str = "pause";
@@ -19,6 +23,9 @@ const MENU_RESTART: &str = "restart";
 const MENU_LOG: &str = "log";
 const MENU_QUIT: &str = "quit";
 const LOGO: &[u8] = include_bytes!("tray.png");
+/// Where blocked packages are listed, below Open logs.
+const BLOCKED_AT: usize = 5;
+const BLOCKED_KEPT: usize = 10;
 
 /// Runs until Quit, once per session.
 pub fn run() -> Result<(), BoxError> {
@@ -29,6 +36,7 @@ pub fn run() -> Result<(), BoxError> {
     }
     let status = MenuItem::new("", false, None);
     let pause = MenuItem::with_id(MENU_PAUSE, "", false, None);
+    let blocked_separator = PredefinedMenuItem::separator();
     let menu = Menu::with_items(&[
         &status,
         &PredefinedMenuItem::separator(),
@@ -39,7 +47,9 @@ pub fn run() -> Result<(), BoxError> {
         &MenuItem::with_id(MENU_QUIT, "Quit", true, None),
     ])?;
     let (logo, logo_size) = logo_mask()?;
-    let icon = TrayIconBuilder::new().with_menu(Box::new(menu)).build()?;
+    let icon = TrayIconBuilder::new()
+        .with_menu(Box::new(menu.clone()))
+        .build()?;
     let window = HWND(icon.window_handle());
     let mut tray = Tray {
         icon,
@@ -49,6 +59,9 @@ pub fn run() -> Result<(), BoxError> {
         status,
         pause,
         state: None,
+        menu,
+        blocked_separator,
+        blocked: Vec::new(),
     };
     tray.update();
     unsafe { SetTimer(None, 0, 2000, None) };
@@ -62,6 +75,7 @@ pub fn run() -> Result<(), BoxError> {
         // Ours, not the icon window's own hover timer.
         if message.message == WM_TIMER && message.hwnd.is_invalid() {
             tray.update();
+            tray.collect_blocks();
         }
         while let Ok(event) = TrayIconEvent::receiver().try_recv() {
             // The menu opens on release, so this keeps it current.
@@ -94,11 +108,39 @@ struct Tray {
     pause: MenuItem,
     /// As the menu last showed it.
     state: Option<ServiceState>,
+    menu: Menu,
+    blocked_separator: PredefinedMenuItem,
+    /// The most recent, as the menu lists them.
+    blocked: Vec<BlockedPackage>,
+}
+
+#[derive(Clone, PartialEq, Deserialize)]
+struct BlockedPackage {
+    eco: String,
+    name: String,
+    version: Option<String>,
+    filter: String,
+    reason: String,
+}
+
+impl BlockedPackage {
+    fn label(&self) -> String {
+        match &self.version {
+            Some(version) => format!("{} {version} ({})", self.name, self.eco),
+            None => format!("{} ({})", self.name, self.eco),
+        }
+    }
+
+    /// The denylist and OSV only flag packages known to be malicious; the age check only holds
+    /// back new ones.
+    fn malicious(&self) -> bool {
+        self.filter != "age"
+    }
 }
 
 impl Tray {
     fn update(&mut self) {
-        self.state = service_state();
+        self.state = service_status().map(|status| status.current_state);
         let screening = self.state == Some(ServiceState::Running);
         let light = light_taskbar();
         if self.drawn != Some((light, screening)) {
@@ -115,6 +157,58 @@ impl Tray {
         let pause = if screening { "Pause" } else { "Resume" };
         self.pause.set_text(pause);
         self.pause.set_enabled(self.state.is_some());
+    }
+
+    /// The service hands each block over once, so whichever tray asks first shows it.
+    fn collect_blocks(&mut self) {
+        if self.state != Some(ServiceState::Running) {
+            return;
+        }
+        let Ok(reply) = ask_service("blocks") else {
+            return;
+        };
+        let Ok(packages) = serde_json::from_str::<Vec<BlockedPackage>>(&reply) else {
+            return;
+        };
+        let mut new = Vec::new();
+        for package in packages {
+            if !self.blocked.contains(&package) {
+                self.blocked.push(package.clone());
+                new.push(package);
+            }
+        }
+        if new.is_empty() {
+            return;
+        }
+        let excess = self.blocked.len().saturating_sub(BLOCKED_KEPT);
+        self.blocked.drain(..excess);
+        self.list_blocked();
+        // Off the UI thread, so the menu keeps working while they are open.
+        std::thread::spawn(move || new.iter().for_each(alert));
+    }
+
+    fn list_blocked(&self) {
+        while self.menu.items().len() > BLOCKED_AT + 2 {
+            self.menu.remove_at(BLOCKED_AT);
+        }
+        let _ = self.menu.insert(&self.blocked_separator, BLOCKED_AT);
+        for (i, package) in self.blocked.iter().enumerate() {
+            let verb = if package.malicious() {
+                "Blocked"
+            } else {
+                "Held back"
+            };
+            let reason = if package.malicious() {
+                format!("Malicious: {}", package.reason)
+            } else {
+                package.reason.clone()
+            };
+            let reason = MenuItem::new(reason, false, None);
+            let label = format!("{verb} {}", package.label());
+            if let Ok(item) = Submenu::with_items(label, true, &[&reason]) {
+                let _ = self.menu.insert(&item, BLOCKED_AT + 1 + i);
+            }
+        }
     }
 
     fn on_menu(&self, id: &str) {
@@ -143,6 +237,39 @@ impl Tray {
     }
 }
 
+fn alert(package: &BlockedPackage) {
+    let text = format!("{} {}.", package.label(), package.reason);
+    let (title, text, style) = if package.malicious() {
+        let title = format!("Blocked malware: {}", package.label());
+        let text = text
+            + "\n\nIt was not installed. Don't install it from another source. If you didn't expect this "
+            + "package, a dependency may be compromised; tell your security team.";
+        (title, text, MB_ICONERROR)
+    } else {
+        ("Held back a new package".to_owned(), text, MB_ICONINFORMATION)
+    };
+    let (title, text) = (HSTRING::from(title), HSTRING::from(text));
+    unsafe { MessageBoxW(None, &text, &title, style | MB_SETFOREGROUND) };
+}
+
+/// One request per connection, as the service answers.
+fn ask_service(request: &str) -> Result<String, BoxError> {
+    let mut pipe = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(PIPE)?;
+    // Any program can create the pipe if it gets there before the service.
+    let mut server = 0;
+    unsafe { GetNamedPipeServerProcessId(HANDLE(pipe.as_raw_handle()), &mut server)? };
+    if service_status().and_then(|status| status.process_id) != Some(server) {
+        return Err("Another program is posing as the firewall service.".into());
+    }
+    pipe.write_all(format!("{request}\n").as_bytes())?;
+    let mut reply = String::new();
+    BufReader::new(pipe).read_line(&mut reply)?;
+    Ok(reply.trim_end().to_owned())
+}
+
 fn show_error(error: BoxError) {
     let text = match error.source() {
         Some(source) => format!("{error}: {source}"),
@@ -153,13 +280,13 @@ fn show_error(error: BoxError) {
 }
 
 /// `None` when the service is not installed.
-fn service_state() -> Option<ServiceState> {
+fn service_status() -> Option<ServiceStatus> {
     let manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT).ok()?;
     let service = manager
         .open_service(SERVICE_NAME, ServiceAccess::QUERY_STATUS)
         .ok()?;
-    Some(service.query_status().ok()?.current_state)
+    service.query_status().ok()
 }
 
 fn light_taskbar() -> bool {
@@ -167,7 +294,8 @@ fn light_taskbar() -> bool {
     let Ok(key) = CURRENT_USER.open(personalize) else {
         return false;
     };
-    key.get_u32("SystemUsesLightTheme").is_ok_and(|light| light == 1)
+    key.get_u32("SystemUsesLightTheme")
+        .is_ok_and(|light| light == 1)
 }
 
 fn status_text(state: Option<ServiceState>) -> &'static str {

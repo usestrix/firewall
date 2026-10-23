@@ -1,6 +1,8 @@
 use super::ca::{load_or_create_ca, secure_data_dir};
 use super::tpm::CaKey;
-use super::{config_file, loopback_addresses, write_hosts_entries, CRL_ADDRESS, SERVICE_NAME};
+use super::{
+    config_file, loopback_addresses, pipe, write_hosts_entries, CRL_ADDRESS, SERVICE_NAME,
+};
 use crate::config::FirewallConfig;
 use crate::http::{reply, text};
 use crate::{mitm, telemetry, Firewall};
@@ -152,6 +154,12 @@ async fn start_screening(status: &ServiceStatusHandle) -> Result<Vec<&'static st
     });
     let crl = HttpServer::auto(exec.clone()).service(crl);
     tokio::spawn(listen_on(CRL_ADDRESS, 80, &exec)?.serve(crl));
+
+    tokio::spawn(async {
+        if let Err(error) = pipe::serve().await {
+            tracing::error!(%error, "the tray cannot reach the service");
+        }
+    });
 
     let service = mitm::mitm_service(firewall, &ca, signer, Some(crl_url), exec.clone());
     for (address, host) in loopback_addresses(&hosts) {
