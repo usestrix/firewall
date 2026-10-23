@@ -19,6 +19,8 @@ settings:
     ENABLE_DEBUG_DYLIB: "NO"
     CODE_SIGN_STYLE: Automatic
     CODE_SIGN_IDENTITY: Apple Development
+    # build.sh sets a fresh one per build; macOS only replaces an installed extension whose version differs.
+    CURRENT_PROJECT_VERSION: "1"
 
 packages:
   Rama:
@@ -42,6 +44,7 @@ targets:
       properties:
         CFBundlePackageType: SYSX
         CFBundleShortVersionString: "0.1"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
         NetworkExtension:
           NEMachServiceName: ${TEAM}.com.usestrix.firewall.extension
@@ -102,6 +105,7 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleShortVersionString: "0.1"
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
         LSUIElement: true
