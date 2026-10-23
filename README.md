@@ -43,15 +43,20 @@ Mirrors of these, such as Artifactory or Nexus, can be added in via a config fil
 
 **Prefix-mode**
 
+cargo:
+```sh
+cargo install strix-firewall
+```
+
+curl: 
 ```sh
 curl -LsSf https://github.com/usestrix/firewall/releases/latest/download/strix-firewall-installer.sh | sh
 ```
 
+Powershell:
 ```powershell
 powershell -c "irm https://github.com/usestrix/firewall/releases/latest/download/strix-firewall-installer.ps1 | iex"
 ```
-
-Or `cargo install strix-firewall`.
 
 ## Configuration
 
