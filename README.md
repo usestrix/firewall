@@ -1,6 +1,6 @@
-# [Strix's Dependency Firewall](http://strix.ai/blog/firewall-announcement)
+# Strix's Dependency Firewall
 
-Stops malicious packages before they install. Built by [Strix](https://usestrix.com).
+Stops malicious packages before they install. Built by [Strix](https://strix.ai/blog/firewall-announcement).
 
 Screening runs on your device: downloads go straight to the registry, never through a Strix server.
 Each package's name and version are looked up [Strix's malicious-package blocklist](https://github.com/usestrix/firewall-blocklist), so installs are blocked system-wide *before* reaching your machine.
