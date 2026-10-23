@@ -70,15 +70,23 @@ Settings are in a `config.json`:
 ```json
 {
   "min_age_hours": 48,
+  "allow": { "npm": [{ "name": "left-pad", "version": "1.3.0" }] },
   "registries": {
     "npm": ["https://npm.example.com/"],
     "pypi": ["https://pypi.example.com/"]
-  }
+  },
+  "telemetry": false
 }
 ```
 
-`registries` lists mirrors by the registry they copy (`npm`, `pypi`, `gem`, `go`, `cargo/index`).
-Both modes screen every mirror listed; command-prefix mode also downloads from the first one.
+| Key | Default | |
+|---|---|---|
+| `min_age_hours` | `24` | How long new versions are held back. `0` turns this off. |
+| `allow` | none | Packages exempt from the hold, by ecosystem (`npm`, `pypi`, `cargo`, `gem`, `go`). Omit `version` for every version. Known malware is still blocked. |
+| `registries` | none | Mirrors, by the registry they copy (`npm`, `pypi`, `gem`, `go`, `cargo/index`). Both modes screen every mirror listed; command-prefix mode also downloads from the first one. |
+| `fail_open` | `true` | Allow a package when it can't be checked. |
+| `telemetry` | `true` | Log anonymized usage events to Strix. |
+| `port` | `8080` | Local port for command-prefix mode. |
 
 ## License
 
