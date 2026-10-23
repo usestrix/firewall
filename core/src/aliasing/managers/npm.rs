@@ -1,4 +1,4 @@
-use super::{Manager, PROXY};
+use super::{Lockfile, Manager, PROXY};
 
 pub static NPM: Manager = Manager {
     command: "npm",
@@ -8,5 +8,5 @@ pub static NPM: Manager = Manager {
         ("npm_config_registry", "http://registry.npmjs.org/"),
     ],
     args: &[],
-    lockfile: Some("package-lock.json"),
+    lockfile: Some(Lockfile::Restore("package-lock.json")),
 };

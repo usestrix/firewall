@@ -10,7 +10,7 @@ use crate::policies::registries::BUILT_IN;
 use std::io::{Error, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use tracing::warn;
+use tracing::{info, warn};
 
 pub struct Invocation {
     pub program: String,
@@ -54,8 +54,10 @@ pub fn run(port: u16, invocation: &Invocation, dir: Option<&Path>) -> std::io::R
     let status = status.map_err(|error| windows::explain(error, &program));
     let code = status?.code().unwrap_or(1);
     let manager = MANAGERS.iter().find(|manager| manager.command == invocation.program);
-    if let Some(lockfile) = manager.and_then(|manager| manager.lockfile) {
-        warn_if_plaintext(lockfile, dir);
+    match manager.and_then(|manager| manager.lockfile.as_ref()) {
+        Some(Lockfile::Restore(lockfile)) => restore_https(lockfile, dir),
+        Some(Lockfile::Warn(lockfile)) => warn_if_plaintext(lockfile, dir),
+        None => {}
     }
     Ok(code)
 }
@@ -70,5 +72,22 @@ fn warn_if_plaintext(lockfile: &str, dir: Option<&Path>) {
     let Ok(text) = std::fs::read_to_string(path) else { return };
     if BUILT_IN.iter().any(|registry| text.contains(&format!("http://{}/", registry.host()))) {
         warn!("{lockfile} has http:// registry URLs; change them to https:// before committing");
+    }
+}
+
+fn restore_https(lockfile: &str, dir: Option<&Path>) {
+    let path = dir.unwrap_or(Path::new(".")).join(lockfile);
+    let Ok(text) = std::fs::read_to_string(&path) else { return };
+    let mut fixed = text.clone();
+    for registry in BUILT_IN {
+        let host = registry.host();
+        fixed = fixed.replace(&format!("http://{host}/"), &format!("https://{host}/"));
+    }
+    if fixed == text {
+        return;
+    }
+    match std::fs::write(&path, fixed) {
+        Ok(()) => info!("changed {lockfile}'s registry URLs back to https://"),
+        Err(e) => warn!("could not change {lockfile}'s registry URLs back to https://: {e}"),
     }
 }

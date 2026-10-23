@@ -37,7 +37,13 @@ pub struct Manager {
     pub env: &'static [(&'static str, &'static str)],
     pub args: &'static [Args],
     /// Where the manager records registry URLs, which then carry our http:// override.
-    pub lockfile: Option<&'static str>,
+    pub lockfile: Option<Lockfile>,
+}
+
+/// What to do after a run about http:// registry URLs left in the lockfile at this path.
+pub enum Lockfile {
+    Restore(&'static str),
+    Warn(&'static str),
 }
 
 pub static MANAGERS: &[&Manager] =
