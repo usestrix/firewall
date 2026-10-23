@@ -69,6 +69,28 @@ impl Firewall {
         self.registries.iter().any(|r| r.index && r.host() == host_of(url))
     }
 
+    /// The URL at the first mirror of the built-in registry it is on, if one is configured.
+    pub fn mirrored(&self, url: String) -> String {
+        for (upstream, mirror) in self.mirrors() {
+            if let Some(rest) = url.strip_prefix(upstream) {
+                return format!("{mirror}{rest}");
+            }
+        }
+        url
+    }
+
+    /// Each built-in upstream with a mirror, paired with its first one.
+    pub fn mirrors(&self) -> Vec<(&'static str, &str)> {
+        let mut mirrors = Vec::new();
+        for registry in BUILT_IN {
+            let first = self.config.registries.get(registry.name()).and_then(|m| m.first());
+            if let Some(mirror) = first {
+                mirrors.push((registry.upstream, mirror.as_str()));
+            }
+        }
+        mirrors
+    }
+
     pub fn resolve(&self, registry: &'static Registry, rest: &str) -> Resolved {
         resolve(registry, rest, &self.patterns[registry.prefix])
     }

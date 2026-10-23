@@ -65,3 +65,16 @@ async fn downgrade_touches_known_hosts_in_text_only() {
     let binary = vec![0x1f, 0x8b, 0xff, 0xfe];
     assert_eq!(downgrade(&firewall, binary.clone()), binary);
 }
+
+#[tokio::test]
+async fn a_mirror_stands_in_for_its_registry() {
+    let mut config = FirewallConfig::default();
+    config.registries.insert("pypi".into(), vec!["https://art.example.com/pypi/".into()]);
+    let firewall = Firewall::new(config);
+    let mirrored = firewall.mirrored("https://pypi.org/simple/six/".into());
+    assert_eq!(mirrored, "https://art.example.com/pypi/simple/six/");
+    let npm = "https://registry.npmjs.org/left-pad";
+    assert_eq!(firewall.mirrored(npm.into()), npm);
+    let links = b"https://art.example.com/pypi/packages/six.whl".to_vec();
+    assert_eq!(downgrade(&firewall, links), b"http://pypi.org/packages/six.whl".to_vec());
+}
