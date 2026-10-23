@@ -12,7 +12,7 @@ use tray_icon::{Icon, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
-use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::System::Threading::*;
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows_registry::CURRENT_USER;
@@ -23,7 +23,8 @@ const MENU_PAUSE: &str = "pause";
 const MENU_RESTART: &str = "restart";
 const MENU_LOG: &str = "log";
 const MENU_QUIT: &str = "quit";
-/// Also the service's request.
+/// Also the service's requests, and `allow` the elevated `firewall-tray` command.
+const ALLOW: &str = "allow";
 const ALLOW_ONCE: &str = "allow-once";
 const LOGO: &[u8] = include_bytes!("tray.png");
 /// Where blocked packages are listed, below Open logs.
@@ -32,6 +33,19 @@ const BLOCKED_KEPT: usize = 10;
 
 /// Runs until Quit, once per session.
 pub fn run() -> Result<(), BoxError> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let [verb, id, label @ ..] = &args[..] {
+        if verb == ALLOW {
+            // Run by `run_elevated`, so the service can tell an admin asked.
+            let trusted = ask_service(&format!("{ALLOW} {id}"))
+                .and_then(|reply| answered(&format!("Trusted {}", label.join(" ")), &reply));
+            if let Err(error) = trusted {
+                show_error(error);
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
+    }
     // Held until we exit.
     let _mutex = unsafe { CreateMutexW(None, false, w!(r"Local\StrixFirewallTray"))? };
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
@@ -206,7 +220,7 @@ impl Tray {
         std::thread::spawn(move || {
             for package in new {
                 if alert(&package) {
-                    allow_once(package, &allowed);
+                    allow(package, false, &allowed);
                 }
             }
         });
@@ -229,11 +243,13 @@ impl Tray {
                 package.reason.clone()
             };
             let reason = MenuItem::new(reason, false, None);
-            let once = MenuItem::with_id(format!("{ALLOW_ONCE}:{i}"), "Allow Once", true, None);
-            let items: &[&dyn IsMenuItem] = if package.trustable() {
-                &[&reason, &once]
-            } else {
+            let trustable = package.trustable();
+            let once = MenuItem::with_id(format!("{ALLOW_ONCE}:{i}"), "Allow Once", trustable, None);
+            let always = MenuItem::with_id(format!("{ALLOW}:{i}"), "Trust this version", trustable, None);
+            let items: &[&dyn IsMenuItem] = if package.malicious() {
                 &[&reason]
+            } else {
+                &[&reason, &once, &always]
             };
             let label = format!("{verb} {}", package.label());
             if let Ok(item) = Submenu::with_items(label, true, items) {
@@ -243,11 +259,12 @@ impl Tray {
     }
 
     fn on_menu(&self, id: &str) {
-        if let Some(i) = id.strip_prefix(ALLOW_ONCE).and_then(|i| i.strip_prefix(':')) {
+        if let Some((verb @ (ALLOW | ALLOW_ONCE), i)) = id.split_once(':') {
+            let trust = verb == ALLOW;
             let package = i.parse().ok().and_then(|i: usize| self.blocked.get(i));
             if let Some(package) = package.cloned() {
                 let allowed = self.allowed.0.clone();
-                std::thread::spawn(move || allow_once(package, &allowed));
+                std::thread::spawn(move || allow(package, trust, &allowed));
             }
             return;
         }
@@ -288,30 +305,72 @@ fn alert(package: &BlockedPackage) -> bool {
     } else if !package.trustable() {
         ("Held back a new package".to_owned(), text, MB_ICONINFORMATION)
     } else {
-        let text = text + "\n\nAllow it once?";
+        let text = text + "\n\nAllow it once? To trust this version, use the notification-area icon.";
         ("Held back a new package".to_owned(), text, MB_YESNO | MB_ICONINFORMATION)
     };
     let (title, text) = (HSTRING::from(title), HSTRING::from(text));
     unsafe { MessageBoxW(None, &text, &title, style | MB_SETFOREGROUND) == IDYES }
 }
 
-/// Tells the user when the install had already stopped waiting.
-fn allow_once(package: BlockedPackage, allowed: &Sender<BlockedPackage>) {
-    let reply = match ask_service(&format!("{ALLOW_ONCE} {}", package.id)) {
-        Ok(reply) => reply,
-        Err(error) => return show_error(error),
+/// Trusting writes the config for every user, so it goes through a UAC prompt.
+/// The elevated process shows its own errors and late replies.
+fn allow(package: BlockedPackage, trust: bool, allowed: &Sender<BlockedPackage>) {
+    let allowed_it = if trust {
+        run_elevated(&[ALLOW, &package.id.to_string(), &package.label()])
+            .map(|code| code == Some(0))
+    } else {
+        let title = format!("Allowed {} for the next minute", package.label());
+        ask_service(&format!("{ALLOW_ONCE} {}", package.id))
+            .and_then(|reply| answered(&title, &reply))
+            .map(|()| true)
     };
-    match reply.as_str() {
-        "ok" => {}
+    match allowed_it {
+        Ok(true) => {
+            let _ = allowed.send(package);
+        }
+        Ok(false) => {}
+        Err(error) => show_error(error),
+    }
+}
+
+/// Tells the user, under `title`, when the install had already stopped waiting.
+fn answered(title: &str, reply: &str) -> Result<(), BoxError> {
+    match reply {
+        "ok" => Ok(()),
         "late" => {
-            let title = format!("Allowed {} for the next minute", package.label());
             let text = "The install had already stopped waiting for it. Run it again to finish.";
             let (title, text) = (HSTRING::from(title), HSTRING::from(text));
             unsafe { MessageBoxW(None, &text, &title, MB_ICONINFORMATION | MB_SETFOREGROUND) };
+            Ok(())
         }
-        other => return show_error(other.into()),
+        other => Err(other.into()),
     }
-    let _ = allowed.send(package);
+}
+
+/// This program as an admin, waiting for its exit code; `None` if the user said no.
+fn run_elevated(args: &[&str]) -> Result<Option<u32>, BoxError> {
+    let exe = HSTRING::from(std::env::current_exe()?.as_path());
+    let parameters = HSTRING::from(args.join(" "));
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS,
+        lpVerb: w!("runas"),
+        lpFile: PCWSTR(exe.as_ptr()),
+        lpParameters: PCWSTR(parameters.as_ptr()),
+        nShow: SW_HIDE.0,
+        ..Default::default()
+    };
+    if let Err(error) = unsafe { ShellExecuteExW(&mut info) } {
+        if error.code() == ERROR_CANCELLED.to_hresult() {
+            return Ok(None);
+        }
+        return Err(error.into());
+    }
+    let process = unsafe { Owned::new(info.hProcess) };
+    unsafe { WaitForSingleObject(*process, INFINITE) };
+    let mut code = 1;
+    unsafe { GetExitCodeProcess(*process, &mut code)? };
+    Ok(Some(code))
 }
 
 /// One request per connection, as the service answers.
