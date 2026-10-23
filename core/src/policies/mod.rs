@@ -70,7 +70,10 @@ pub async fn screen(url: &str, firewall: &Firewall) -> Option<String> {
     info!(eco = registry.eco, pkg = %pkg.label(), %url, "screening");
     match consult(firewall, registry, &pkg).await {
         Some((filter, Verdict::Deny(reason))) => {
-            crate::blocks::record(registry.eco, &pkg, filter, &reason);
+            if crate::blocks::block(registry.eco, &pkg, filter, &reason).await {
+                info!(eco = registry.eco, pkg = %pkg.label(), "allowed while held");
+                return None;
+            }
             Some(format!("{} {reason}", pkg.label()))
         }
         Some((filter, Verdict::Unknown(e))) if !firewall.config.fail_open => {

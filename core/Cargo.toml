@@ -90,6 +90,10 @@ path = "tests/tpm.rs"
 name = "managers"
 path = "tests/managers.rs"
 
+[[test]]
+name = "blocks"
+path = "tests/blocks.rs"
+
 [features]
 # Builds the machine-wide binaries: the Windows service and tray, and the macOS uninstaller.
 machine-wide = []

@@ -203,26 +203,22 @@ final class FirewallModel: NSObject, ObservableObject {
         if let url = URL(string: pane) { NSWorkspace.shared.open(url) }
     }
 
-    /// Allowing a version writes it into the extension's config, which a restart then loads.
-    func trust(_ package: BlockedPackage) async {
+    /// Trusting changes the config for every user, so it takes an admin.
+    func allow(_ package: BlockedPackage, _ allowance: Allowance) async {
         guard package.trustable else { return }
-        guard AdminAuthorization.confirm() else {
+        if allowance == .always, !AdminAuthorization.confirm() {
             log("Trust cancelled for \(package.label)")
             return
         }
         do {
-            var request = ["eco": package.eco, "name": package.name]
-            request["version"] = package.version
-            let json = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
-            let reply = try await providerMessage("allow \(json)")
-            guard reply == "ok" else { throw FirewallError.extensionRefused(reply) }
+            let reply = try await providerMessage("\(allowance == .once ? "allow-once" : "allow") \(package.id)")
+            guard reply == "ok" || reply == "late" else { throw FirewallError.extensionRefused(reply) }
             blocked.removeAll { $0 == package }
-            log("Trusted \(package.label) (\(package.eco))")
+            log("Allowed \(package.label) (\(package.eco)) \(allowance)")
+            if reply == "late" { BlockAlert.late(package, allowance) }
         } catch {
-            log("Could not trust \(package.label): \(error.localizedDescription)")
-            return
+            log("Could not allow \(package.label): \(error.localizedDescription)")
         }
-        await restart()
     }
 
     /// The extension cannot message the app, so the app asks it for blocks.
@@ -232,11 +228,11 @@ final class FirewallModel: NSObject, ObservableObject {
                let packages = try? JSONDecoder().decode([BlockedPackage].self, from: Data(reply.utf8)) {
                 for package in packages where !blocked.contains(package) {
                     blocked.append(package)
-                    if BlockAlert.show(package) { await trust(package) }
+                    if let allowance = BlockAlert.show(package) { await allow(package, allowance) }
                 }
                 blocked = Array(blocked.suffix(10))
             }
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
     }
 

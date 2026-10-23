@@ -1,4 +1,4 @@
-use firewall::config::path;
+use firewall::config::{path, AllowedPackage};
 use firewall::policies::filters::consult;
 use firewall::policies::{screen, Package};
 use firewall::{Firewall, FirewallConfig};
@@ -95,12 +95,23 @@ async fn failing_closed_blocks_what_could_not_be_checked() {
     assert!(blocked.contains("could not be checked"), "{blocked:?}");
 }
 
+#[tokio::test]
+async fn lifting_the_age_check_still_checks_for_malware() {
+    let config = r#"{"denylist": {"base": "http://127.0.0.1:1"}}"#;
+    let firewall = Firewall::new(serde_json::from_str(config).expect("parses"));
+    let (registry, _) = firewall.match_on("/go/golang.org/x/net/@v/list", |r| r.prefix).expect("go");
+    let pkg = Package { name: "golang.org/x/net".into(), version: Some("0.20.0".into()) };
+    firewall.lift_age_check("go", AllowedPackage { name: pkg.name.clone(), version: None }, None);
+    let (filter, _) = consult(&firewall, registry, &pkg).await.expect("the denylist still runs");
+    assert_eq!(filter, "denylist");
+}
+
 #[test]
 fn allowing_keeps_the_rest_of_the_file() {
     let path = std::env::temp_dir().join(format!("firewall-allow-{}.json", std::process::id()));
     std::fs::write(&path, r#"{"fail_open": false}"#).expect("write");
     for _ in 0..2 {
-        firewall::config::allow(&path, "npm", "left-pad", Some("1.3.0")).expect("allow");
+        firewall::config::allow(&path, "npm", "left-pad", "1.3.0").expect("allow");
     }
     let text = std::fs::read_to_string(&path).expect("read");
     std::fs::remove_file(&path).ok();

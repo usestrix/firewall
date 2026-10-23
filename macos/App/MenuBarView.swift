@@ -29,8 +29,12 @@ struct MenuBarView: View {
                 if !package.malicious {
                     Menu("Held back \(package.label) (\(package.eco))") {
                         Text(package.reason)
+                        Button("Allow Once") {
+                            Task { await model.allow(package, .once) }
+                        }
+                        .disabled(model.busy || !package.trustable)
                         Button("Trust this version") {
-                            Task { await model.trust(package) }
+                            Task { await model.allow(package, .always) }
                         }
                         .disabled(model.busy || !package.trustable)
                     }

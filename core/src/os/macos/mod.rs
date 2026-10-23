@@ -4,7 +4,7 @@ mod uninstall;
 
 pub use uninstall::uninstall;
 
-use crate::config::{self, FirewallConfig};
+use crate::config::FirewallConfig;
 use crate::{blocks, mitm, telemetry};
 use crate::Firewall;
 use rama::bytes::Bytes;
@@ -22,7 +22,6 @@ use rama::net::apple::networkextension::{transparent_proxy_ffi, NwTcpStream, Tcp
 use rama::rt::Executor;
 use rama::telemetry::tracing::apple::oslog::{OsLogLayer, Privacy};
 use rama::{Layer, Service};
-use serde::Deserialize;
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -40,6 +39,7 @@ const CONFIG_FILE: &str = "/Library/Application Support/Firewall/config.json";
 struct Handler {
     ca: Arc<mitm::CertificateAuthority>,
     hosts: Vec<&'static str>,
+    firewall: Arc<Firewall>,
     service: mitm::MitmService,
 }
 
@@ -59,12 +59,7 @@ impl TransparentProxyHandler for Handler {
         let message = String::from_utf8_lossy(&message).into_owned();
         Some(Bytes::from(match message.as_str() {
             "ca" => self.ca.pem.clone(),
-            "blocks" => serde_json::to_string(&blocks::take()).expect("blocks serialize"),
-            other => match other.strip_prefix("allow ").map(allow) {
-                Some(Ok(())) => "ok".to_owned(),
-                Some(Err(error)) => format!("error: {error}"),
-                None => format!("error: unknown message {other}"),
-            },
+            other => blocks::answer(&self.firewall, CONFIG_FILE.as_ref(), other),
         }))
     }
 
@@ -119,22 +114,8 @@ fn handler(exec: Executor) -> Result<Handler, BoxError> {
     let signer: mitm::CaSigner = Arc::new(key);
     let ca = install::certificate_authority(&hosts, &*signer);
     let ca = Arc::new(ca.inspect_err(|_| telemetry::error("ca"))?);
-    let service = mitm::mitm_service(firewall, &ca, signer, None, exec);
-    Ok(Handler { ca, hosts, service })
-}
-
-#[derive(Deserialize)]
-struct AllowRequest {
-    eco: String,
-    name: String,
-    version: Option<String>,
-}
-
-/// Takes effect when the provider restarts, which rebuilds it from the config.
-fn allow(request: &str) -> Result<(), BoxError> {
-    let request: AllowRequest = serde_json::from_str(request)?;
-    config::allow(CONFIG_FILE.as_ref(), &request.eco, &request.name, request.version.as_deref())?;
-    Ok(())
+    let service = mitm::mitm_service(firewall.clone(), &ca, signer, None, exec);
+    Ok(Handler { ca, hosts, firewall, service })
 }
 
 /// stderr is invisible in a system extension, so events go to the unified log:
