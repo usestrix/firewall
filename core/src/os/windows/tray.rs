@@ -9,10 +9,12 @@ use std::os::windows::io::AsRawHandle;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 use tray_icon::{Icon, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use windows::core::{w, PCWSTR};
+use windows::core::{w, HRESULT, PCWSTR};
 use windows::Win32::Foundation::*;
+use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
-use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::System::Threading::*;
+use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows_registry::CURRENT_USER;
@@ -23,7 +25,8 @@ const MENU_PAUSE: &str = "pause";
 const MENU_RESTART: &str = "restart";
 const MENU_LOG: &str = "log";
 const MENU_QUIT: &str = "quit";
-/// Also the service's request.
+/// Also the service's requests, and `allow` the elevated `firewall-tray` command.
+const ALLOW: &str = "allow";
 const ALLOW_ONCE: &str = "allow-once";
 const LOGO: &[u8] = include_bytes!("tray.png");
 /// Where blocked packages are listed, below Open logs.
@@ -32,6 +35,19 @@ const BLOCKED_KEPT: usize = 10;
 
 /// Runs until Quit, once per session.
 pub fn run() -> Result<(), BoxError> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let [verb, id, label @ ..] = &args[..] {
+        if verb == ALLOW {
+            // Run by `run_elevated`, so the service can tell an admin asked.
+            let trusted = ask_service(&format!("{ALLOW} {id}"))
+                .and_then(|reply| answered(&format!("Trusted {}", label.join(" ")), &reply));
+            if let Err(error) = trusted {
+                show_error(error);
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
+    }
     // Held until we exit.
     let _mutex = unsafe { CreateMutexW(None, false, w!(r"Local\StrixFirewallTray"))? };
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
@@ -199,8 +215,8 @@ impl Tray {
         let allowed = self.allowed.0.clone();
         std::thread::spawn(move || {
             for package in new {
-                if alert(&package) {
-                    allow_once(package, &allowed);
+                if let Some(trust) = alert(&package) {
+                    allow(package, trust, &allowed);
                 }
             }
         });
@@ -219,9 +235,13 @@ impl Tray {
                 package.reason.clone()
             };
             let reason = MenuItem::new(reason, false, None);
-            let once = MenuItem::with_id(format!("{ALLOW_ONCE}:{i}"), "Allow Once", true, None);
+            let trustable = package.trustable();
+            let once =
+                MenuItem::with_id(format!("{ALLOW_ONCE}:{i}"), "Allow Once", trustable, None);
+            let always =
+                MenuItem::with_id(format!("{ALLOW}:{i}"), "Trust this version", trustable, None);
             let items: &[&dyn IsMenuItem] =
-                if package.trustable() { &[&reason, &once] } else { &[&reason] };
+                if package.malicious() { &[&reason] } else { &[&reason, &once, &always] };
             let label = format!("{verb} {}", package.label());
             if let Ok(item) = Submenu::with_items(label, true, items) {
                 let _ = self.menu.insert(&item, BLOCKED_AT + 1 + i);
@@ -230,11 +250,12 @@ impl Tray {
     }
 
     fn on_menu(&self, id: &str) {
-        if let Some(i) = id.strip_prefix(ALLOW_ONCE).and_then(|i| i.strip_prefix(':')) {
+        if let Some((verb @ (ALLOW | ALLOW_ONCE), i)) = id.split_once(':') {
+            let trust = verb == ALLOW;
             let package = i.parse().ok().and_then(|i: usize| self.blocked.get(i));
             if let Some(package) = package.cloned() {
                 let allowed = self.allowed.0.clone();
-                std::thread::spawn(move || allow_once(package, &allowed));
+                std::thread::spawn(move || allow(package, trust, &allowed));
             }
             return;
         }
@@ -263,42 +284,154 @@ impl Tray {
     }
 }
 
-/// Whether the user chose to allow it once.
-fn alert(package: &BlockedPackage) -> bool {
+const ALLOW_ONCE_BUTTON: i32 = 100;
+const TRUST_BUTTON: i32 = 101;
+/// `firewall.rc`'s icon, embedded by `build.rs`.
+const STRIX_ICON: PCWSTR = PCWSTR(1 as _);
+
+/// `Some(true)` if the user chose to trust it, `Some(false)` to allow it once.
+/// A task dialog, as a message box can't have both buttons.
+fn alert(package: &BlockedPackage) -> Option<bool> {
     let text = format!("{} {}.", package.label(), package.reason);
-    let (title, text, style) = if package.malicious() {
+    let (title, text, icon) = if package.malicious() {
         let title = format!("Blocked malware: {}", package.label());
         let text = text
             + "\n\nIt was not installed. Don't install it from another source. If you didn't expect this "
             + "package, a dependency may be compromised; tell your security team.";
-        (title, text, MB_ICONERROR)
-    } else if !package.trustable() {
-        ("Held back a new package".to_owned(), text, MB_ICONINFORMATION)
+        (title, text, TD_ERROR_ICON)
     } else {
-        let text = text + "\n\nAllow it once?";
-        ("Held back a new package".to_owned(), text, MB_YESNO | MB_ICONINFORMATION)
+        ("Held back a new package".to_owned(), text, STRIX_ICON)
     };
-    let (title, text) = (HSTRING::from(title), HSTRING::from(text));
-    unsafe { MessageBoxW(None, &text, &title, style | MB_SETFOREGROUND) == IDYES }
+    let button = |id, text| TASKDIALOG_BUTTON { nButtonID: id, pszButtonText: text };
+    let allow = [
+        button(ALLOW_ONCE_BUTTON, w!("Allow Once")),
+        button(TRUST_BUTTON, w!("Trust this version")),
+    ];
+    let buttons: &[_] = if package.trustable() { &allow } else { &[] };
+    let (title, text) = (HSTRING::from(title), HSTRING::from(linked(&text)));
+    let dialog = TASKDIALOGCONFIG {
+        cbSize: size_of::<TASKDIALOGCONFIG>() as u32,
+        dwFlags: TDF_ENABLE_HYPERLINKS,
+        // Where `STRIX_ICON` is loaded from; the `TD_` icons are Windows'.
+        hInstance: unsafe { GetModuleHandleW(None) }.ok()?.into(),
+        dwCommonButtons: TDCBF_CLOSE_BUTTON,
+        pszWindowTitle: w!("Strix Firewall"),
+        Anonymous1: TASKDIALOGCONFIG_0 { pszMainIcon: icon },
+        pszMainInstruction: PCWSTR(title.as_ptr()),
+        pszContent: PCWSTR(text.as_ptr()),
+        cButtons: buttons.len() as u32,
+        pButtons: buttons.as_ptr(),
+        pfCallback: Some(on_dialog),
+        ..Default::default()
+    };
+    let mut chosen = 0;
+    unsafe { TaskDialogIndirect(&dialog, Some(&raw mut chosen), None, None) }.ok()?;
+    match chosen {
+        ALLOW_ONCE_BUTTON => Some(false),
+        TRUST_BUTTON => Some(true),
+        _ => None,
+    }
 }
 
-/// Tells the user when the install had already stopped waiting.
-fn allow_once(package: BlockedPackage, allowed: &Sender<BlockedPackage>) {
-    let reply = match ask_service(&format!("{ALLOW_ONCE} {}", package.id)) {
-        Ok(reply) => reply,
-        Err(error) => return show_error(error),
+/// Asks for the foreground, as `MB_SETFOREGROUND` did; Windows may still leave it behind.
+/// Opens the links `linked` made, in the browser.
+unsafe extern "system" fn on_dialog(
+    window: HWND,
+    event: TASKDIALOG_NOTIFICATIONS,
+    _: WPARAM,
+    link: LPARAM,
+    _: isize,
+) -> HRESULT {
+    if event == TDN_CREATED {
+        let _ = unsafe { SetForegroundWindow(window) };
+    } else if event == TDN_HYPERLINK_CLICKED {
+        let link = PCWSTR(link.0 as *const u16);
+        // Only web pages, whatever a block's reason contains.
+        let web = unsafe { link.to_string() }
+            .is_ok_and(|link| link.starts_with("https://") || link.starts_with("http://"));
+        if web {
+            let none = PCWSTR::null();
+            unsafe { ShellExecuteW(None, w!("open"), link, none, none, SW_SHOWNORMAL) };
+        }
+    }
+    S_OK
+}
+
+/// A task dialog's markup for the text, with each URL a link.
+fn linked(text: &str) -> String {
+    let mut marked = String::new();
+    let mut rest = text;
+    while let Some(start) =
+        ["https://", "http://"].iter().filter_map(|scheme| rest.find(scheme)).min()
+    {
+        let end = rest[start..].find(|c: char| c.is_whitespace() || c == ',' || c == ')');
+        let url = rest[start..end.map_or(rest.len(), |end| start + end)].trim_end_matches('.');
+        marked += &rest[..start];
+        marked += &format!("<a href=\"{url}\">{url}</a>");
+        rest = &rest[start + url.len()..];
+    }
+    marked + rest
+}
+
+/// Trusting writes the config for every user, so it goes through a UAC prompt.
+/// The elevated process shows its own errors and late replies.
+fn allow(package: BlockedPackage, trust: bool, allowed: &Sender<BlockedPackage>) {
+    let allowed_it = if trust {
+        run_elevated(&[ALLOW, &package.id.to_string(), &package.label()])
+            .map(|code| code == Some(0))
+    } else {
+        let title = format!("Allowed {} for the next minute", package.label());
+        ask_service(&format!("{ALLOW_ONCE} {}", package.id))
+            .and_then(|reply| answered(&title, &reply))
+            .map(|()| true)
     };
-    match reply.as_str() {
-        "ok" => {}
+    match allowed_it {
+        Ok(true) => {
+            let _ = allowed.send(package);
+        }
+        Ok(false) => {}
+        Err(error) => show_error(error),
+    }
+}
+
+/// Tells the user, under `title`, when the install had already stopped waiting.
+fn answered(title: &str, reply: &str) -> Result<(), BoxError> {
+    match reply {
+        "ok" => Ok(()),
         "late" => {
-            let title = format!("Allowed {} for the next minute", package.label());
             let text = "The install had already stopped waiting for it. Run it again to finish.";
             let (title, text) = (HSTRING::from(title), HSTRING::from(text));
             unsafe { MessageBoxW(None, &text, &title, MB_ICONINFORMATION | MB_SETFOREGROUND) };
+            Ok(())
         }
-        other => return show_error(other.into()),
+        other => Err(other.into()),
     }
-    let _ = allowed.send(package);
+}
+
+/// This program as an admin, waiting for its exit code; `None` if the user said no.
+fn run_elevated(args: &[&str]) -> Result<Option<u32>, BoxError> {
+    let exe = HSTRING::from(std::env::current_exe()?.as_path());
+    let parameters = HSTRING::from(args.join(" "));
+    let mut info = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS,
+        lpVerb: w!("runas"),
+        lpFile: PCWSTR(exe.as_ptr()),
+        lpParameters: PCWSTR(parameters.as_ptr()),
+        nShow: SW_HIDE.0,
+        ..Default::default()
+    };
+    if let Err(error) = unsafe { ShellExecuteExW(&mut info) } {
+        if error.code() == ERROR_CANCELLED.to_hresult() {
+            return Ok(None);
+        }
+        return Err(error.into());
+    }
+    let process = unsafe { Owned::new(info.hProcess) };
+    unsafe { WaitForSingleObject(*process, INFINITE) };
+    let mut code = 1;
+    unsafe { GetExitCodeProcess(*process, &mut code)? };
+    Ok(Some(code))
 }
 
 /// One request per connection, as the service answers.
