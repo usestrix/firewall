@@ -155,8 +155,9 @@ async fn start_screening(status: &ServiceStatusHandle) -> Result<Vec<&'static st
     let crl = HttpServer::auto(exec.clone()).service(crl);
     tokio::spawn(listen_on(CRL_ADDRESS, 80, &exec)?.serve(crl));
 
-    tokio::spawn(async {
-        if let Err(error) = pipe::serve().await {
+    let tray_firewall = Arc::clone(&firewall);
+    tokio::spawn(async move {
+        if let Err(error) = pipe::serve(tray_firewall).await {
             tracing::error!(%error, "the tray cannot reach the service");
         }
     });

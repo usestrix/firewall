@@ -2,10 +2,11 @@
 
 use super::pipe::PIPE;
 use super::*;
-use muda::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
+use muda::{IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use serde::Deserialize;
 use std::io::{BufRead, BufReader, Cursor, Write};
 use std::os::windows::io::AsRawHandle;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 use tray_icon::{Icon, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use windows::core::{w, PCWSTR};
@@ -22,6 +23,8 @@ const MENU_PAUSE: &str = "pause";
 const MENU_RESTART: &str = "restart";
 const MENU_LOG: &str = "log";
 const MENU_QUIT: &str = "quit";
+/// Also the service's request.
+const ALLOW_ONCE: &str = "allow-once";
 const LOGO: &[u8] = include_bytes!("tray.png");
 /// Where blocked packages are listed, below Open logs.
 const BLOCKED_AT: usize = 5;
@@ -62,9 +65,11 @@ pub fn run() -> Result<(), BoxError> {
         menu,
         blocked_separator,
         blocked: Vec::new(),
+        allowed: channel(),
     };
     tray.update();
-    unsafe { SetTimer(None, 0, 2000, None) };
+    // The service holds a new package's download only while it is asked this often.
+    unsafe { SetTimer(None, 0, 500, None) };
     let mut message = MSG::default();
     while unsafe { GetMessageW(&mut message, None, 0, 0) }.0 > 0 {
         unsafe { DispatchMessageW(&message) };
@@ -112,10 +117,13 @@ struct Tray {
     blocked_separator: PredefinedMenuItem,
     /// The most recent, as the menu lists them.
     blocked: Vec<BlockedPackage>,
+    /// Allowed from another thread, so no longer listed.
+    allowed: (Sender<BlockedPackage>, Receiver<BlockedPackage>),
 }
 
 #[derive(Clone, PartialEq, Deserialize)]
 struct BlockedPackage {
+    id: u64,
     eco: String,
     name: String,
     version: Option<String>,
@@ -135,6 +143,11 @@ impl BlockedPackage {
     /// back new ones.
     fn malicious(&self) -> bool {
         self.filter != "age"
+    }
+
+    /// Malware is never allowed, and a new package only by version.
+    fn trustable(&self) -> bool {
+        !self.malicious() && self.version.is_some()
     }
 }
 
@@ -161,6 +174,11 @@ impl Tray {
 
     /// The service hands each block over once, so whichever tray asks first shows it.
     fn collect_blocks(&mut self) {
+        let allowed: Vec<_> = self.allowed.1.try_iter().collect();
+        if !allowed.is_empty() {
+            self.blocked.retain(|blocked| !allowed.contains(blocked));
+            self.list_blocked();
+        }
         if self.state != Some(ServiceState::Running) {
             return;
         }
@@ -184,7 +202,14 @@ impl Tray {
         self.blocked.drain(..excess);
         self.list_blocked();
         // Off the UI thread, so the menu keeps working while they are open.
-        std::thread::spawn(move || new.iter().for_each(alert));
+        let allowed = self.allowed.0.clone();
+        std::thread::spawn(move || {
+            for package in new {
+                if alert(&package) {
+                    allow_once(package, &allowed);
+                }
+            }
+        });
     }
 
     fn list_blocked(&self) {
@@ -204,14 +229,28 @@ impl Tray {
                 package.reason.clone()
             };
             let reason = MenuItem::new(reason, false, None);
+            let once = MenuItem::with_id(format!("{ALLOW_ONCE}:{i}"), "Allow Once", true, None);
+            let items: &[&dyn IsMenuItem] = if package.trustable() {
+                &[&reason, &once]
+            } else {
+                &[&reason]
+            };
             let label = format!("{verb} {}", package.label());
-            if let Ok(item) = Submenu::with_items(label, true, &[&reason]) {
+            if let Ok(item) = Submenu::with_items(label, true, items) {
                 let _ = self.menu.insert(&item, BLOCKED_AT + 1 + i);
             }
         }
     }
 
     fn on_menu(&self, id: &str) {
+        if let Some(i) = id.strip_prefix(ALLOW_ONCE).and_then(|i| i.strip_prefix(':')) {
+            let package = i.parse().ok().and_then(|i: usize| self.blocked.get(i));
+            if let Some(package) = package.cloned() {
+                let allowed = self.allowed.0.clone();
+                std::thread::spawn(move || allow_once(package, &allowed));
+            }
+            return;
+        }
         let state = self.state;
         let screening = state == Some(ServiceState::Running);
         let action: fn() -> Result<(), BoxError> = match id {
@@ -237,7 +276,8 @@ impl Tray {
     }
 }
 
-fn alert(package: &BlockedPackage) {
+/// Whether the user chose to allow it once.
+fn alert(package: &BlockedPackage) -> bool {
     let text = format!("{} {}.", package.label(), package.reason);
     let (title, text, style) = if package.malicious() {
         let title = format!("Blocked malware: {}", package.label());
@@ -245,11 +285,33 @@ fn alert(package: &BlockedPackage) {
             + "\n\nIt was not installed. Don't install it from another source. If you didn't expect this "
             + "package, a dependency may be compromised; tell your security team.";
         (title, text, MB_ICONERROR)
-    } else {
+    } else if !package.trustable() {
         ("Held back a new package".to_owned(), text, MB_ICONINFORMATION)
+    } else {
+        let text = text + "\n\nAllow it once?";
+        ("Held back a new package".to_owned(), text, MB_YESNO | MB_ICONINFORMATION)
     };
     let (title, text) = (HSTRING::from(title), HSTRING::from(text));
-    unsafe { MessageBoxW(None, &text, &title, style | MB_SETFOREGROUND) };
+    unsafe { MessageBoxW(None, &text, &title, style | MB_SETFOREGROUND) == IDYES }
+}
+
+/// Tells the user when the install had already stopped waiting.
+fn allow_once(package: BlockedPackage, allowed: &Sender<BlockedPackage>) {
+    let reply = match ask_service(&format!("{ALLOW_ONCE} {}", package.id)) {
+        Ok(reply) => reply,
+        Err(error) => return show_error(error),
+    };
+    match reply.as_str() {
+        "ok" => {}
+        "late" => {
+            let title = format!("Allowed {} for the next minute", package.label());
+            let text = "The install had already stopped waiting for it. Run it again to finish.";
+            let (title, text) = (HSTRING::from(title), HSTRING::from(text));
+            unsafe { MessageBoxW(None, &text, &title, MB_ICONINFORMATION | MB_SETFOREGROUND) };
+        }
+        other => return show_error(other.into()),
+    }
+    let _ = allowed.send(package);
 }
 
 /// One request per connection, as the service answers.
