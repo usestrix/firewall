@@ -51,10 +51,7 @@ fn create(first: bool) -> Result<NamedPipeServer, BoxError> {
 async fn answer(client: NamedPipeServer, firewall: &Firewall) -> Result<(), BoxError> {
     let mut client = BufReader::new(client);
     let mut request = String::new();
-    (&mut client)
-        .take(64 * 1024)
-        .read_line(&mut request)
-        .await?;
+    (&mut client).take(64 * 1024).read_line(&mut request).await?;
     let request = request.trim_end();
     // Only the app can message the macOS extension; here any program could connect.
     let reply = if !client_is_tray(client.get_ref())? {

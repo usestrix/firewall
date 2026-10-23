@@ -25,7 +25,11 @@ pub fn local_url(port: u16, path: &str) -> String {
 }
 
 pub fn init_logging(default_level: &str) {
-    fmt().with_env_filter(log_filter(default_level)).with_target(false).with_writer(std::io::stderr).init();
+    fmt()
+        .with_env_filter(log_filter(default_level))
+        .with_target(false)
+        .with_writer(std::io::stderr)
+        .init();
 }
 
 pub(crate) fn log_filter(default_level: &str) -> EnvFilter {

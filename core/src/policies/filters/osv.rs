@@ -41,8 +41,10 @@ impl Filter for Osv {
             if hits.is_empty() {
                 Verdict::Allow
             } else {
-                let links: Vec<String> =
-                    hits.iter().map(|id| format!("{id} https://osv.dev/vulnerability/{id}")).collect();
+                let links: Vec<String> = hits
+                    .iter()
+                    .map(|id| format!("{id} https://osv.dev/vulnerability/{id}"))
+                    .collect();
                 Verdict::Deny(format!("is flagged malicious by OSV: {}", links.join(", ")))
             }
         })

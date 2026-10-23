@@ -5,8 +5,8 @@ mod uninstall;
 pub use uninstall::uninstall;
 
 use crate::config::FirewallConfig;
-use crate::{blocks, mitm, telemetry};
 use crate::Firewall;
+use crate::{blocks, mitm, telemetry};
 use rama::bytes::Bytes;
 use rama::error::BoxError;
 use rama::io::BridgeIo;
@@ -107,7 +107,8 @@ pub fn system_config() -> Option<PathBuf> {
 fn handler(exec: Executor) -> Result<Handler, BoxError> {
     telemetry::set_mode("extension");
     telemetry::heartbeat();
-    let config = FirewallConfig::load_from(&[CONFIG_FILE.into()]).inspect_err(|_| telemetry::error("config"))?;
+    let config = FirewallConfig::load_from(&[CONFIG_FILE.into()])
+        .inspect_err(|_| telemetry::error("config"))?;
     let firewall = Arc::new(Firewall::new(config));
     let hosts = firewall.hosts();
     let key = enclave::EnclaveKey::load_or_create().inspect_err(|_| telemetry::error("enclave"))?;
@@ -125,7 +126,8 @@ fn init(_config: Option<&TransparentProxyInitConfig>) -> bool {
     std::panic::set_hook(Box::new(|panic| tracing::error!("{panic}")));
     if let Ok(oslog) = OsLogLayer::new(BUNDLE_ID, "extension") {
         let oslog = oslog.with_privacy(Privacy::Public);
-        let _ = tracing_subscriber::registry().with(crate::log_filter("info")).with(oslog).try_init();
+        let _ =
+            tracing_subscriber::registry().with(crate::log_filter("info")).with(oslog).try_init();
     }
     true
 }

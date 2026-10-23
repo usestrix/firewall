@@ -79,9 +79,7 @@ fn run_until_stopped() -> Result<(), BoxError> {
             // Answered once handled, so a failed pause fails the caller's ControlService.
             let (reply, handled) = tokio::sync::oneshot::channel();
             let _ = control_sender.send((control, reply));
-            handled
-                .blocking_recv()
-                .unwrap_or(ServiceControlHandlerResult::NoError)
+            handled.blocking_recv().unwrap_or(ServiceControlHandlerResult::NoError)
         }
         ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
         _ => ServiceControlHandlerResult::NotImplemented,
@@ -109,9 +107,7 @@ fn run_until_stopped() -> Result<(), BoxError> {
                 }
                 Err(error) => {
                     tracing::error!(%error, "could not rewrite the hosts file");
-                    let code = error
-                        .raw_os_error()
-                        .map_or(ERROR_GEN_FAILURE.0, |code| code as u32);
+                    let code = error.raw_os_error().map_or(ERROR_GEN_FAILURE.0, |code| code as u32);
                     ServiceControlHandlerResult::Other(code)
                 }
             };
@@ -165,12 +161,8 @@ async fn start_screening(status: &ServiceStatusHandle) -> Result<Vec<&'static st
     let service = mitm::mitm_service(firewall, &ca, signer, Some(crl_url), exec.clone());
     for (address, host) in loopback_addresses(&hosts) {
         for port in [80, 443] {
-            let upstream = RedirectedHost {
-                host,
-                port,
-                resolver: resolver.clone(),
-                service: service.clone(),
-            };
+            let upstream =
+                RedirectedHost { host, port, resolver: resolver.clone(), service: service.clone() };
             let upstream = ConsumeErrLayer::trace_as_warning().into_layer(upstream);
             tokio::spawn(listen_on(address, port, &exec)?.serve(upstream));
         }

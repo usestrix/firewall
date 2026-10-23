@@ -1,6 +1,6 @@
 use crate::http::{blocked, https_url};
-use crate::{policies, telemetry};
 use crate::Firewall;
+use crate::{policies, telemetry};
 use rama::error::BoxError;
 use rama::http::{Request, Response};
 use rama::{Layer, Service};

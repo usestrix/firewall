@@ -49,8 +49,13 @@ fn a_later_file_wins_and_allow_lists_add_up() {
     std::fs::create_dir_all(&dir).expect("temp dir");
     let user = dir.join("user.json");
     let system = dir.join("system.json");
-    std::fs::write(&user, r#"{"min_age_hours": 1, "fail_open": false, "allow": {"npm": [{"name": "a"}]}}"#).expect("write");
-    std::fs::write(&system, r#"{"min_age_hours": 24, "allow": {"npm": [{"name": "b"}]}}"#).expect("write");
+    std::fs::write(
+        &user,
+        r#"{"min_age_hours": 1, "fail_open": false, "allow": {"npm": [{"name": "a"}]}}"#,
+    )
+    .expect("write");
+    std::fs::write(&system, r#"{"min_age_hours": 24, "allow": {"npm": [{"name": "b"}]}}"#)
+        .expect("write");
     let missing = dir.join("missing.json");
     let config = FirewallConfig::load_from(&[user, system, missing]).expect("loads");
     std::fs::remove_dir_all(&dir).ok();
@@ -67,9 +72,13 @@ async fn a_mirror_is_screened_like_the_registry_it_copies() {
     assert!(firewall.hosts().contains(&"npm.example.com"));
     let url = "https://npm.example.com/left-pad/-/left-pad-1.3.0.tgz";
     let (registry, rest) = firewall.match_on(url, |r| r.upstream).expect("the mirror");
-    assert_eq!(firewall.resolve(registry, rest).pkg.map(|p| p.label()), Some("left-pad@1.3.0".into()));
+    assert_eq!(
+        firewall.resolve(registry, rest).pkg.map(|p| p.label()),
+        Some("left-pad@1.3.0".into())
+    );
     let unknown = std::env::temp_dir().join(format!("firewall-mirror-{}.json", std::process::id()));
-    std::fs::write(&unknown, r#"{"registries": {"nmp": ["https://npm.example.com/"]}}"#).expect("write");
+    std::fs::write(&unknown, r#"{"registries": {"nmp": ["https://npm.example.com/"]}}"#)
+        .expect("write");
     let loaded = FirewallConfig::load_from(std::slice::from_ref(&unknown));
     std::fs::remove_file(&unknown).ok();
     assert!(loaded.is_err());
@@ -80,7 +89,8 @@ async fn an_allowed_version_is_still_checked_for_malware() {
     // The unreachable denylist shows that it still runs.
     let config = r#"{"allow": {"go": [{"name": "golang.org/x/net", "version": "v0.20.0"}]}, "denylist": {"base": "http://127.0.0.1:1"}}"#;
     let firewall = Firewall::new(serde_json::from_str(config).expect("parses"));
-    let (registry, _) = firewall.match_on("/go/golang.org/x/net/@v/list", |r| r.prefix).expect("go");
+    let (registry, _) =
+        firewall.match_on("/go/golang.org/x/net/@v/list", |r| r.prefix).expect("go");
     let pkg = Package { name: "golang.org/x/net".into(), version: Some("0.20.0".into()) };
     let verdict = consult(&firewall, registry, &pkg).await;
     assert_eq!(verdict.map(|(filter, _)| filter), Some("denylist"));
@@ -99,7 +109,8 @@ async fn failing_closed_blocks_what_could_not_be_checked() {
 async fn lifting_the_age_check_still_checks_for_malware() {
     let config = r#"{"denylist": {"base": "http://127.0.0.1:1"}}"#;
     let firewall = Firewall::new(serde_json::from_str(config).expect("parses"));
-    let (registry, _) = firewall.match_on("/go/golang.org/x/net/@v/list", |r| r.prefix).expect("go");
+    let (registry, _) =
+        firewall.match_on("/go/golang.org/x/net/@v/list", |r| r.prefix).expect("go");
     let pkg = Package { name: "golang.org/x/net".into(), version: Some("0.20.0".into()) };
     firewall.lift_age_check("go", AllowedPackage { name: pkg.name.clone(), version: None }, None);
     let (filter, _) = consult(&firewall, registry, &pkg).await.expect("the denylist still runs");

@@ -58,10 +58,7 @@ fn serve() -> ! {
         Ok(()) => exit(0),
         Err(e) if e.kind() == ErrorKind::AddrInUse => {
             let location = config::path().map_or("the config".into(), |p| p.display().to_string());
-            fail(
-                "port",
-                &format!("port {port} is in use, set another in {location}"),
-            )
+            fail("port", &format!("port {port} is in use, set another in {location}"))
         }
         Err(e) if e.kind() == ErrorKind::PermissionDenied => {
             fail("port", &format!("not allowed to listen on port {port}"))

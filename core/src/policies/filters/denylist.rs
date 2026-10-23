@@ -63,9 +63,7 @@ impl Filter for Denylist {
     fn check<'a>(&'a self, registry: &'static Registry, pkg: &'a Package) -> VerdictFuture<'a> {
         Box::pin(async move {
             let eco = registry.osv_name;
-            let load = || async {
-                RwLock::new(Arc::new(load(&self.source, eco).await))
-            };
+            let load = || async { RwLock::new(Arc::new(load(&self.source, eco).await)) };
             let list = self.lists[eco].get_or_init(load).await;
             let list = Arc::clone(&list.read().expect("denylist lock"));
             match &*list {
