@@ -48,7 +48,7 @@ build() {
   xcodegen generate >/dev/null
   xcodebuild -project Firewall.xcodeproj -scheme StrixFirewall -configuration $CONFIGURATION \
     -destination generic/platform=macOS \
-    -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+    -derivedDataPath build CURRENT_PROJECT_VERSION="$(date +%s)" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" build >/dev/null
 }
 
