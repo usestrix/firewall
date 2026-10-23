@@ -8,4 +8,5 @@ pub static GEM: Manager = Manager {
         when: &["install", "update", "fetch"],
         flags: &["--clear-sources", "--source", "http://rubygems.org/"],
     }],
+    lockfile: None,
 };

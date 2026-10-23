@@ -8,4 +8,5 @@ pub static NPM: Manager = Manager {
         ("npm_config_registry", "http://registry.npmjs.org/"),
     ],
     args: &[],
+    lockfile: Some("package-lock.json"),
 };

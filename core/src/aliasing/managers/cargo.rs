@@ -17,4 +17,5 @@ pub static CARGO: Manager = Manager {
             "source.firewall.registry=\"sparse+http://index.crates.io/\"",
         ],
     }],
+    lockfile: None,
 };
