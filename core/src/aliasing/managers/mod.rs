@@ -36,6 +36,8 @@ pub struct Manager {
     pub command: &'static str,
     pub env: &'static [(&'static str, &'static str)],
     pub args: &'static [Args],
+    /// Where the manager records registry URLs, which then carry our http:// override.
+    pub lockfile: Option<&'static str>,
 }
 
 pub static MANAGERS: &[&Manager] =

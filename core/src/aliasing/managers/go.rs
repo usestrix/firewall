@@ -11,4 +11,5 @@ pub static GO: Manager = Manager {
         ("GOFLAGS", "-mod=mod"),
     ],
     args: &[],
+    lockfile: None,
 };

@@ -13,4 +13,5 @@ pub static PIPENV: Manager = Manager {
         ("PIP_TRUSTED_HOST", "pypi.org files.pythonhosted.org"),
     ],
     args: &[],
+    lockfile: None,
 };

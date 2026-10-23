@@ -12,5 +12,5 @@ pub static PIP: Manager = recipe("pip");
 pub static PIP3: Manager = recipe("pip3");
 
 const fn recipe(name: &'static str) -> Manager {
-    Manager { command: name, env: PIP_ENV, args: &[] }
+    Manager { command: name, env: PIP_ENV, args: &[], lockfile: None }
 }

@@ -13,4 +13,5 @@ pub static PDM: Manager = Manager {
         ("PDM_PYPI_VERIFY_SSL", "false"),
     ],
     args: &[],
+    lockfile: None,
 };

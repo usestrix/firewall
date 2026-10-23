@@ -11,4 +11,5 @@ pub static BUN: Manager = Manager {
         ("npm_config_registry", "http://registry.npmjs.org/"),
     ],
     args: &[],
+    lockfile: None,
 };

@@ -9,4 +9,5 @@ pub static PNPM: Manager = Manager {
         ("pnpm_config_registry", "http://registry.npmjs.org/"),
     ],
     args: &[],
+    lockfile: None,
 };
