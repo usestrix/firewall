@@ -9,10 +9,11 @@ use std::os::windows::io::AsRawHandle;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 use tray_icon::{Icon, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use windows::core::{w, PCWSTR};
+use windows::core::{w, HRESULT, PCWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::System::Pipes::GetNamedPipeServerProcessId;
 use windows::Win32::System::Threading::*;
+use windows::Win32::UI::Controls::*;
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows_registry::CURRENT_USER;
@@ -213,8 +214,8 @@ impl Tray {
         let allowed = self.allowed.0.clone();
         std::thread::spawn(move || {
             for package in new {
-                if alert(&package) {
-                    allow(package, false, &allowed);
+                if let Some(trust) = alert(&package) {
+                    allow(package, trust, &allowed);
                 }
             }
         });
@@ -282,24 +283,62 @@ impl Tray {
     }
 }
 
-/// Whether the user chose to allow it once.
-fn alert(package: &BlockedPackage) -> bool {
+const ALLOW_ONCE_BUTTON: i32 = 100;
+const TRUST_BUTTON: i32 = 101;
+
+/// `Some(true)` if the user chose to trust it, `Some(false)` to allow it once.
+/// A task dialog, as a message box can't have both buttons.
+fn alert(package: &BlockedPackage) -> Option<bool> {
     let text = format!("{} {}.", package.label(), package.reason);
-    let (title, text, style) = if package.malicious() {
+    let (title, text, icon) = if package.malicious() {
         let title = format!("Blocked malware: {}", package.label());
         let text = text
             + "\n\nIt was not installed. Don't install it from another source. If you didn't expect this "
             + "package, a dependency may be compromised; tell your security team.";
-        (title, text, MB_ICONERROR)
-    } else if !package.trustable() {
-        ("Held back a new package".to_owned(), text, MB_ICONINFORMATION)
+        (title, text, TD_ERROR_ICON)
     } else {
-        let text =
-            text + "\n\nAllow it once? To trust this version, use the notification-area icon.";
-        ("Held back a new package".to_owned(), text, MB_YESNO | MB_ICONINFORMATION)
+        ("Held back a new package".to_owned(), text, TD_INFORMATION_ICON)
     };
+    let button = |id, text| TASKDIALOG_BUTTON { nButtonID: id, pszButtonText: text };
+    let allow = [
+        button(ALLOW_ONCE_BUTTON, w!("Allow Once")),
+        button(TRUST_BUTTON, w!("Trust this version")),
+    ];
+    let buttons: &[_] = if package.trustable() { &allow } else { &[] };
     let (title, text) = (HSTRING::from(title), HSTRING::from(text));
-    unsafe { MessageBoxW(None, &text, &title, style | MB_SETFOREGROUND) == IDYES }
+    let dialog = TASKDIALOGCONFIG {
+        cbSize: size_of::<TASKDIALOGCONFIG>() as u32,
+        dwCommonButtons: TDCBF_CLOSE_BUTTON,
+        pszWindowTitle: w!("Strix Firewall"),
+        Anonymous1: TASKDIALOGCONFIG_0 { pszMainIcon: icon },
+        pszMainInstruction: PCWSTR(title.as_ptr()),
+        pszContent: PCWSTR(text.as_ptr()),
+        cButtons: buttons.len() as u32,
+        pButtons: buttons.as_ptr(),
+        pfCallback: Some(on_dialog),
+        ..Default::default()
+    };
+    let mut chosen = 0;
+    unsafe { TaskDialogIndirect(&dialog, Some(&raw mut chosen), None, None) }.ok()?;
+    match chosen {
+        ALLOW_ONCE_BUTTON => Some(false),
+        TRUST_BUTTON => Some(true),
+        _ => None,
+    }
+}
+
+/// Asks for the foreground, as `MB_SETFOREGROUND` did; Windows may still leave it behind.
+unsafe extern "system" fn on_dialog(
+    window: HWND,
+    event: TASKDIALOG_NOTIFICATIONS,
+    _: WPARAM,
+    _: LPARAM,
+    _: isize,
+) -> HRESULT {
+    if event == TDN_CREATED {
+        let _ = unsafe { SetForegroundWindow(window) };
+    }
+    S_OK
 }
 
 /// Trusting writes the config for every user, so it goes through a UAC prompt.
