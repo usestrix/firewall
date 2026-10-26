@@ -5,6 +5,12 @@ Stops malicious packages before they install. Built by [Strix](https://strix.ai)
 Screening runs on your device: downloads go straight to the registry, never through a Strix server.
 Each package's name and version are looked up [Strix's malicious-package blocklist](https://github.com/usestrix/firewall-blocklist), so installs are blocked system-wide *before* reaching your machine.
 
+
+
+https://github.com/user-attachments/assets/32067f94-06f4-4967-bc8b-d4b2eca8bdf1
+
+
+
 ## Install
 
 **Machine-wide**, from the [latest release](https://github.com/usestrix/firewall/releases/latest):
