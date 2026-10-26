@@ -1,0 +1,3 @@
+- name: Set the telemetry key
+  shell: bash
+  run: echo "FIREWALL_POSTHOG_KEY=${{ secrets.FIREWALL_POSTHOG_KEY }}" >> "$GITHUB_ENV"

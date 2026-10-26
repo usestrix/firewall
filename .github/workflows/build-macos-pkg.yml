@@ -13,6 +13,7 @@ jobs:
     env:
       TEAM: ${{ vars.APPLE_TEAM }}
       NOTARY_PROFILE: firewall
+      FIREWALL_POSTHOG_KEY: ${{ secrets.FIREWALL_POSTHOG_KEY }}
     steps:
       - uses: actions/checkout@v6
         with:
