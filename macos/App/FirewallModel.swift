@@ -72,9 +72,8 @@ final class FirewallModel: NSObject, ObservableObject {
             let running = connection.status == .connected
             Task { @MainActor in self?.screening = running }
         }
-        Task {
-            await refresh()
-            if CommandLine.arguments.contains("--install") { await install() }
+        if CommandLine.arguments.contains("--install") {
+            Task { await install() }
         }
         Task { await watchBlocks() }
     }
@@ -84,6 +83,10 @@ final class FirewallModel: NSObject, ObservableObject {
     func refresh() async {
         if let manager = try? await loadManager() {
             watched = manager
+            // Nothing starts the tunnel at boot, so the app does once it is set up and not paused.
+            if manager.isEnabled && manager.connection.status == .disconnected {
+                try? manager.connection.startVPNTunnel()
+            }
             if manager.isEnabled {
                 screeningStep = .done("Enabled (\(manager.connection.status.label))")
             }
