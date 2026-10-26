@@ -2,6 +2,7 @@ import AppKit
 import NetworkExtension
 import OSLog
 import Security
+import ServiceManagement
 import SystemExtensions
 
 enum StepStatus: Equatable {
@@ -116,6 +117,11 @@ final class FirewallModel: NSObject, ObservableObject {
                           work: trustCertificateAuthority)
         else { return }
 
+        do {
+            try SMAppService.mainApp.register()
+        } catch {
+            log("Could not open the app at login: \(error.localizedDescription)")
+        }
         completed = true
         log("Setup complete")
         offerRestart()
@@ -156,6 +162,7 @@ final class FirewallModel: NSObject, ObservableObject {
         await removeConfiguration()
         let strandedKey = removeStoredCA()
         await deactivate()
+        try? await SMAppService.mainApp.unregister()
         if let strandedKey { trustStep = .failed(strandedKey) }
 
         let failed = [extensionStep, screeningStep, trustStep].contains(where: \.isFailed)
