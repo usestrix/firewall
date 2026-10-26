@@ -17,6 +17,8 @@ async fn allowing_once_releases_the_held_download() {
         let blocks: serde_json::Value =
             serde_json::from_str(&answer(&firewall, config, "blocks")).unwrap();
         if let Some(id) = blocks[0]["id"].as_u64() {
+            assert_eq!(blocks[0]["malicious"], false);
+            assert_eq!(blocks[0]["trustable"], true);
             break id;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;

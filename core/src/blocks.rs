@@ -25,6 +25,10 @@ pub struct BlockedPackage {
     pub version: Option<String>,
     pub filter: &'static str,
     pub reason: String,
+    /// Flagged as malware, not just held back for being new.
+    pub malicious: bool,
+    /// Malware is never allowed, and a new package only by version. Saves each app the rule.
+    pub trustable: bool,
 }
 
 struct Blocks {
@@ -99,9 +103,11 @@ fn record(
         version: pkg.version.clone(),
         filter,
         reason: reason.to_owned(),
+        malicious: filter != "age",
+        trustable: filter == "age" && pkg.version.is_some(),
     };
     push(&mut blocks.unsent, block.clone());
-    if filter != "age" {
+    if block.malicious {
         return None;
     }
     let (wake, allowed) = watch::channel(false);
