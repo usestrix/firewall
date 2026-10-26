@@ -27,9 +27,7 @@ jobs:
 
           ## Command line
 
-          \`\`\`sh
-          cargo install strix-firewall
-          \`\`\`
+          **Command-line installs do not include machine-wide screening.**
 
           \`\`\`sh
           curl --proto '=https' --tlsv1.2 -LsSf $url/strix-firewall-installer.sh | sh
