@@ -319,3 +319,12 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  custom-release-notes:
+    needs:
+      - plan
+      - announce
+    uses: ./.github/workflows/release-notes.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    secrets: inherit
