@@ -33,12 +33,11 @@ enum SetupWindow {
 private struct MenuBarLabel: View {
     @ObservedObject var model: FirewallModel
     @Environment(\.openWindow) private var openWindow
-    @State private var raised = false
 
     var body: some View {
-        Image(nsImage: Self.icon).onAppear {
-            guard !raised, !model.screening else { return }
-            raised = true
+        Image(nsImage: Self.icon).task {
+            await model.refresh()
+            guard !model.configured else { return }
             SetupWindow.open(openWindow)
         }
     }
