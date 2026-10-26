@@ -1,0 +1,42 @@
+name: Rewrite release notes
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  notes:
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ fromJson(inputs.plan).announcement_tag }}
+    steps:
+      - run: |
+          url="https://github.com/${{ github.repository }}/releases/download/$TAG"
+          cat > notes.md <<NOTES
+          ## macOS
+
+          [Firewall.pkg]($url/Firewall.pkg)
+
+          ## Windows
+
+          [strix-firewall-x86_64-pc-windows-msvc.msi]($url/strix-firewall-x86_64-pc-windows-msvc.msi)
+
+          ## Command line
+
+          \`\`\`sh
+          cargo install strix-firewall
+          \`\`\`
+
+          \`\`\`sh
+          curl --proto '=https' --tlsv1.2 -LsSf $url/strix-firewall-installer.sh | sh
+          \`\`\`
+
+          \`\`\`sh
+          powershell -ExecutionPolicy Bypass -c "irm $url/strix-firewall-installer.ps1 | iex"
+          \`\`\`
+          NOTES
+          gh release edit "$TAG" --repo "${{ github.repository }}" --notes-file notes.md

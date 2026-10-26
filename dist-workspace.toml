@@ -8,6 +8,8 @@ installers = ["shell", "powershell", "msi"]
 # core/wix/main.wxs is edited to install the service.
 allow-dirty = ["msi"]
 features = ["machine-wide"]
+source-tarball = false
 publish-jobs = ["./publish-crates"]
+post-announce-jobs = ["./release-notes"]
 global-artifacts-jobs = ["./build-macos-pkg"]
 targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
