@@ -55,6 +55,7 @@ final class FirewallModel: NSObject, ObservableObject {
     @Published private(set) var removed = false
     @Published private(set) var screening = false
     @Published private(set) var blocked: [BlockedPackage] = []
+    @Published private(set) var update: String?
 
     private let logger = Logger(subsystem: FirewallIDs.appBundleID, category: "installer")
     private var pendingRequest: (request: OSSystemExtensionRequest, continuation: CheckedContinuation<Void, Error>)?
@@ -76,6 +77,7 @@ final class FirewallModel: NSObject, ObservableObject {
             Task { await install() }
         }
         Task { await watchBlocks() }
+        Task { await watchUpdates() }
     }
 
     // MARK: - Flows
@@ -243,6 +245,17 @@ final class FirewallModel: NSObject, ObservableObject {
                 if blocked.count > 10 { blocked.removeFirst(blocked.count - 10) }
             }
             try? await Task.sleep(nanoseconds: 500_000_000)
+        }
+    }
+
+    /// Asks again every day until the user updates.
+    private func watchUpdates() async {
+        while true {
+            if let version = await Updates.available() {
+                update = version
+                Updates.prompt(version)
+            }
+            try? await Task.sleep(nanoseconds: 86_400_000_000_000)
         }
     }
 

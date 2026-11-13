@@ -7,6 +7,12 @@ struct MenuBarView: View {
     var body: some View {
         Text(model.screening ? "Screening downloads" : "Not running")
 
+        if let version = model.update {
+            Button("Update to \(version)") {
+                Updates.download(version)
+            }
+        }
+
         Divider()
 
         Button("Setup") {
