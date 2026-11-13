@@ -28,7 +28,7 @@ export NE_PROVIDER
 
 APP_ID=com.usestrix.firewall
 EXT_ID=com.usestrix.firewall.extension
-VERSION=0.1
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' ../core/Cargo.toml)
 INSTALLER_IDENTITY=${INSTALLER_IDENTITY:-Developer ID Installer}
 PROFILES="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 
@@ -48,7 +48,7 @@ build() {
   xcodegen generate >/dev/null
   xcodebuild -project Firewall.xcodeproj -scheme StrixFirewall -configuration $CONFIGURATION \
     -destination generic/platform=macOS \
-    -derivedDataPath build CURRENT_PROJECT_VERSION="$(date +%s)" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+    -derivedDataPath build CURRENT_PROJECT_VERSION="$(date +%s)" MARKETING_VERSION="$VERSION" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
     CODE_SIGN_IDENTITY="" CODE_SIGN_ENTITLEMENTS="" build >/dev/null
 }
 

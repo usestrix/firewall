@@ -43,7 +43,7 @@ targets:
       path: Extension/Info.plist
       properties:
         CFBundlePackageType: SYSX
-        CFBundleShortVersionString: "0.1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
         NetworkExtension:
@@ -104,7 +104,7 @@ targets:
     info:
       path: App/Info.plist
       properties:
-        CFBundleShortVersionString: "0.1"
+        CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
         NSSystemExtensionUsageDescription: Firewall uses a network extension to screen package downloads before they install.
