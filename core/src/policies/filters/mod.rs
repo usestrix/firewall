@@ -9,7 +9,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 /// Some registry APIs turn away requests without a user agent.
-const AGENT: &str = "strix-firewall";
+pub(crate) const AGENT: &str = "strix-firewall";
 
 pub type VerdictFuture<'a> = Pin<Box<dyn Future<Output = Verdict> + Send + 'a>>;
 

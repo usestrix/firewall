@@ -24,6 +24,9 @@ pub struct FirewallConfig {
     pub telemetry: bool,
     /// Mirrors laid out like a built-in registry, by its name: `{"npm": ["https://npm.example.com/"]}`.
     pub registries: HashMap<String, Vec<String>>,
+    /// A Strix API key, which applies the organization's settings and blocks from the Strix app.
+    pub api_key: Option<String>,
+    pub api_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +57,8 @@ impl Default for FirewallConfig {
             allow: HashMap::new(),
             telemetry: true,
             registries: HashMap::new(),
+            api_key: None,
+            api_url: "https://app.strix.ai/api/v1".into(),
         }
     }
 }
@@ -163,7 +168,7 @@ fn check(config: &FirewallConfig) -> Result<(), String> {
             return Err(format!("unknown ecosystem {eco:?} in allow"));
         }
     }
-    for url in [&config.denylist.base, &config.denylist.revision] {
+    for url in [&config.denylist.base, &config.denylist.revision, &config.api_url] {
         if parse_url(url, &["http", "https"]).is_none() {
             return Err(format!("{url:?} is not an http(s) URL"));
         }

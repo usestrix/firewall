@@ -89,6 +89,8 @@ Settings are in a `config.json`:
 | `fail_open` | `true` | Allow a package when it can't be checked. |
 | `telemetry` | `true` | Log anonymized usage events to Strix. |
 | `port` | `8080` | Local port for command-prefix mode. |
+| `api_key` | none | A Strix API key with `firewall:read` and `firewall:report`. Applies your organization's settings from the Strix app, which win over this file's, and its allow list adds to this one. |
+| `api_url` | `https://app.strix.ai/api/v1` | Where the Strix app is. |
 
 ## License
 

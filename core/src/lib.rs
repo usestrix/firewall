@@ -4,6 +4,7 @@ pub mod config;
 pub mod firewall;
 pub mod http;
 pub mod mitm;
+mod org;
 pub mod os;
 pub mod policies;
 pub mod proxy;
