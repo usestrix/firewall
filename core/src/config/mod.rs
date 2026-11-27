@@ -130,6 +130,31 @@ fn merge(base: &mut Map<String, Value>, top: Map<String, Value>) {
 
 /// Adds an `allow` entry to the file, leaving the rest of it as written.
 pub fn allow(path: &Path, eco: &str, name: &str, version: &str) -> std::io::Result<()> {
+    edit(path, |config| {
+        let entry = json!({ "name": name, "version": version });
+        let entries = &mut config["allow"][eco];
+        if entries.is_null() {
+            *entries = Value::Array(Vec::new());
+        }
+        let Some(entries) = entries.as_array_mut() else {
+            return Err(format!("allow.{eco} is not a list"));
+        };
+        if !entries.contains(&entry) {
+            entries.push(entry);
+        }
+        Ok(())
+    })
+}
+
+/// Sets `api_key` in the file, leaving the rest of it as written.
+pub fn set_api_key(path: &Path, key: &str) -> std::io::Result<()> {
+    edit(path, |config| {
+        config["api_key"] = key.into();
+        Ok(())
+    })
+}
+
+fn edit(path: &Path, change: impl FnOnce(&mut Value) -> Result<(), String>) -> std::io::Result<()> {
     let invalid =
         |e: String| Error::new(ErrorKind::InvalidData, format!("{}: {e}", path.display()));
     let mut config = match std::fs::read_to_string(path) {
@@ -140,17 +165,7 @@ pub fn allow(path: &Path, eco: &str, name: &str, version: &str) -> std::io::Resu
     if !config.is_object() {
         return Err(invalid("not an object".into()));
     }
-    let entry = json!({ "name": name, "version": version });
-    let entries = &mut config["allow"][eco];
-    if entries.is_null() {
-        *entries = Value::Array(Vec::new());
-    }
-    let Some(entries) = entries.as_array_mut() else {
-        return Err(invalid(format!("allow.{eco} is not a list")));
-    };
-    if !entries.contains(&entry) {
-        entries.push(entry);
-    }
+    change(&mut config).map_err(invalid)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }

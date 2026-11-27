@@ -162,6 +162,16 @@
             Execute='deferred'
             Impersonate='no'
             Return='check'/>
+        <!-- `msiexec /i … STRIX_API_KEY=…` saves the key in the machine-wide config. Hidden from the MSI log. -->
+        <Property Id='STRIX_API_KEY' Secure='yes' Hidden='yes'/>
+        <CustomAction
+            Id='SetApiKey'
+            FileKey='exe1'
+            ExeCommand='api-key "[STRIX_API_KEY]"'
+            Execute='deferred'
+            Impersonate='no'
+            HideTarget='yes'
+            Return='check'/>
         <!-- From the exit dialog, which runs as the signed-in user rather than elevated. -->
         <CustomAction
             Id='StartTray'
@@ -174,6 +184,8 @@
             <!-- An upgrade removes the old version too, but should keep screening. -->
             <Custom Action='UninstallFirewall' After='DeleteServices'>REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
             <Custom Action='SetFailureActions' After='InstallServices'>NOT REMOVE~="ALL"</Custom>
+            <!-- Before the service first reads the config. -->
+            <Custom Action='SetApiKey' Before='StartServices'>STRIX_API_KEY AND NOT REMOVE~="ALL"</Custom>
             <Custom Action='SetFailureFlag' After='SetFailureActions'>NOT REMOVE~="ALL"</Custom>
             <!-- The default, before InstallFiles, is after RemoveFiles, which would find the tray still running. -->
             <Custom Action='WixCloseApplications' Before='RemoveFiles'/>

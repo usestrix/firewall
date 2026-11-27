@@ -45,6 +45,12 @@ pub fn system_config() -> Option<PathBuf> {
     Some(config_file())
 }
 
+/// Run by the MSI when it is given `STRIX_API_KEY`.
+pub fn set_api_key(key: &str) -> std::io::Result<()> {
+    ca::secure_data_dir()?;
+    crate::config::set_api_key(&config_file(), key)
+}
+
 /// In the folder Windows reads it from, normally %SystemRoot%\System32\drivers\etc.
 fn hosts_file() -> PathBuf {
     let key = r"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters";
