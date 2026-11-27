@@ -1,7 +1,7 @@
 use crate::policies::registries::{host_of, BUILT_IN};
 use directories::ProjectDirs;
 use rama::net::uri::Uri;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::HashMap;
 use std::io::{Error, ErrorKind};
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 pub const DEFAULT_PORT: u16 = 8080;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct FirewallConfig {
     pub port: NonZeroU16,
@@ -29,7 +29,7 @@ pub struct FirewallConfig {
     pub api_url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AllowedPackage {
     pub name: String,
@@ -37,7 +37,7 @@ pub struct AllowedPackage {
     pub version: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct DenylistSource {
     /// One file per ecosystem lives under here, named the way OSV names it, in lowercase.
@@ -104,6 +104,15 @@ impl FirewallConfig {
             merge(&mut merged, layer);
         }
         Ok(serde_json::from_value(Value::Object(merged)).expect("each layer parsed on its own"))
+    }
+
+    /// `layer` wins key by key, but allow lists add up.
+    pub fn with_layer(&self, layer: Map<String, Value>) -> Result<Self, String> {
+        let mut merged = serde_json::to_value(self).expect("a config serializes");
+        merge(merged.as_object_mut().expect("a config is an object"), layer);
+        let config = Self::deserialize(merged).map_err(|e| e.to_string())?;
+        check(&config)?;
+        Ok(config)
     }
 
     pub fn local_url(&self, path: &str) -> String {
