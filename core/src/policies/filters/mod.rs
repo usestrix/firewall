@@ -1,5 +1,6 @@
 pub mod age;
 pub mod denylist;
+pub mod org;
 pub mod osv;
 
 use super::registries::{Package, Registry};
@@ -33,7 +34,7 @@ pub async fn consult(
     pkg: &Package,
 ) -> Option<(&'static str, Verdict)> {
     let lifted = allowed(firewall, registry, pkg)
-        || firewall.age_check_lifted(registry.eco, |entry| matches(registry, pkg, entry));
+        || firewall.age_check_lifted(registry.eco, |entry| matches_entry(registry, pkg, entry));
     let mut unsure = None;
     for filter in firewall.filters() {
         if lifted && filter.name() == "age" {
@@ -53,15 +54,20 @@ fn allowed(firewall: &Firewall, registry: &Registry, pkg: &Package) -> bool {
     let Some(entries) = firewall.config.allow.get(registry.eco) else {
         return false;
     };
-    entries.iter().any(|entry| matches(registry, pkg, entry))
+    entries.iter().any(|entry| matches_entry(registry, pkg, entry))
 }
 
-fn matches(registry: &Registry, pkg: &Package, entry: &AllowedPackage) -> bool {
+fn matches_entry(registry: &Registry, pkg: &Package, entry: &AllowedPackage) -> bool {
+    matches(registry, pkg, &entry.name, entry.version.as_deref())
+}
+
+/// A missing version matches every version.
+fn matches(registry: &Registry, pkg: &Package, name: &str, version: Option<&str>) -> bool {
     let name_matches = match registry.normalize {
-        Some(normalize) => normalize(&entry.name) == pkg.name,
-        None => entry.name == pkg.name,
+        Some(normalize) => normalize(name) == pkg.name,
+        None => name == pkg.name,
     };
     // Go writes a leading v that the parsed version drops, and PEP 440 ignores one.
-    let version = entry.version.as_deref().map(|v| v.strip_prefix('v').unwrap_or(v));
+    let version = version.map(|v| v.strip_prefix('v').unwrap_or(v));
     name_matches && (version.is_none() || version == pkg.version.as_deref())
 }

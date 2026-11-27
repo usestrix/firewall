@@ -40,7 +40,11 @@ pub fn with_settings(config: FirewallConfig) -> FirewallConfig {
     }
 }
 
-async fn get<T: DeserializeOwned>(api_url: &str, key: &str, path: &str) -> Result<T, String> {
+pub(crate) async fn get<T: DeserializeOwned>(
+    api_url: &str,
+    key: &str,
+    path: &str,
+) -> Result<T, String> {
     let url = format!("{}/{path}", api_url.trim_end_matches('/'));
     let client = EasyHttpWebClient::default();
     let request =
