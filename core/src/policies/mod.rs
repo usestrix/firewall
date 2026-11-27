@@ -46,7 +46,8 @@ pub async fn decide(request_target: &str, firewall: &Firewall) -> Decision {
         Some(pkg) => match consult(firewall, registry, &pkg).await {
             None => Check::Allowed(pkg),
             Some((filter, Verdict::Deny(reason))) => {
-                return Decision::Block { eco, pkg, filter, reason }
+                crate::org::blocked(eco, &pkg, filter, &reason);
+                return Decision::Block { eco, pkg, filter, reason };
             }
             Some((filter, Verdict::Unknown(e))) if !firewall.config.fail_open => {
                 let reason = format!("could not be checked by {filter} ({e})");
@@ -74,6 +75,7 @@ pub async fn screen(url: &str, firewall: &Firewall) -> Option<String> {
                 info!(eco = registry.eco, pkg = %pkg.label(), "allowed while held");
                 return None;
             }
+            crate::org::blocked(registry.eco, &pkg, filter, &reason);
             Some(format!("{} {reason}", pkg.label()))
         }
         Some((filter, Verdict::Unknown(e))) if !firewall.config.fail_open => {

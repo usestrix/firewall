@@ -28,6 +28,7 @@ impl Default for Firewall {
 impl Firewall {
     pub fn new(config: FirewallConfig) -> Self {
         let config = crate::org::with_settings(config);
+        crate::org::report_to(&config);
         let registries = with_mirrors(&config.registries);
         let mut patterns = HashMap::new();
         for registry in &registries {
