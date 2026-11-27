@@ -1,5 +1,7 @@
 use firewall::config::{path, AllowedPackage};
-use firewall::policies::filters::consult;
+use firewall::policies::filters::org::Org;
+use firewall::policies::filters::{consult, Filter, Verdict};
+use firewall::policies::registries::BUILT_IN;
 use firewall::policies::{screen, Package};
 use firewall::{Firewall, FirewallConfig};
 use std::io::{Read, Write};
@@ -162,6 +164,23 @@ async fn the_organizations_settings_win_and_its_allow_list_adds_up() {
     assert!(!firewall.config.fail_open);
     let allowed: Vec<&str> = firewall.config.allow["npm"].iter().map(|a| a.name.as_str()).collect();
     assert_eq!(allowed, ["is-odd", "left-pad"]);
+}
+
+#[tokio::test]
+async fn an_organization_block_matches_names_as_the_registry_does() {
+    let (api_url, server) = serve_once(
+        r#"{"blocks": [{"id": "b1", "ecosystem": "pypi", "name": "Six", "version": null, "reason": "compromised"}]}"#,
+    );
+    let org = Org::new(api_url, "strix_test".into());
+    let registry = |eco| BUILT_IN.iter().find(|r| r.eco == eco).expect(eco);
+    let six = Package { name: "six".into(), version: Some("1.16.0".into()) };
+
+    match org.check(registry("pypi"), &six).await {
+        Verdict::Deny(reason) => assert_eq!(reason, "is blocked by your organization: compromised"),
+        _ => panic!("not blocked"),
+    }
+    assert!(matches!(org.check(registry("npm"), &six).await, Verdict::Allow));
+    assert!(server.join().unwrap().starts_with("GET /api/v1/firewall/blocks "));
 }
 
 /// Answers one request with `body` and hands back what was asked.

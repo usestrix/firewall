@@ -293,7 +293,9 @@ const STRIX_ICON: PCWSTR = PCWSTR(1 as _);
 /// A task dialog, as a message box can't have both buttons.
 fn alert(package: &BlockedPackage) -> Option<bool> {
     let text = format!("{} {}.", package.label(), package.reason);
-    let (title, text, icon) = if package.malicious() {
+    let (title, text, icon) = if package.filter == "org" {
+        (format!("Blocked by your organization: {}", package.label()), text, TD_ERROR_ICON)
+    } else if package.malicious() {
         let title = format!("Blocked malware: {}", package.label());
         let text = text
             + "\n\nIt was not installed. Don't install it from another source. If you didn't expect this "

@@ -27,7 +27,11 @@ enum BlockAlert {
     static func show(_ package: BlockedPackage) -> Allowance? {
         let alert = NSAlert()
         alert.addButton(withTitle: "OK")
-        if package.malicious {
+        if package.filter == "org" {
+            alert.alertStyle = .critical
+            alert.messageText = "Blocked by your organization: \(package.label) (\(package.eco))"
+            setText(alert, "\(package.label) \(package.reason).")
+        } else if package.malicious {
             alert.alertStyle = .critical
             alert.messageText = "Blocked malware: \(package.label) (\(package.eco))"
             setText(alert, "\(package.label) \(package.reason).\n\n"
