@@ -2,6 +2,9 @@ use firewall::config::{path, AllowedPackage};
 use firewall::policies::filters::consult;
 use firewall::policies::{screen, Package};
 use firewall::{Firewall, FirewallConfig};
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::thread::JoinHandle;
 
 #[test]
 fn a_file_only_has_to_set_what_it_changes() {
@@ -139,4 +142,42 @@ fn allowing_keeps_the_rest_of_the_file() {
     assert!(!config.fail_open);
     assert_eq!(config.allow["npm"].len(), 1);
     assert_eq!(config.allow["npm"][0].version.as_deref(), Some("1.3.0"));
+}
+
+#[tokio::test]
+async fn the_organizations_settings_win_and_its_allow_list_adds_up() {
+    let (api_url, server) = serve_once(
+        r#"{"min_age_hours": 72, "fail_open": null, "allow": {"npm": [{"name": "left-pad"}]}}"#,
+    );
+    let local = r#"{"fail_open": false, "allow": {"npm": [{"name": "is-odd"}]}}"#;
+    let mut config: FirewallConfig = serde_json::from_str(local).unwrap();
+    config.api_key = Some("strix_test".into());
+    config.api_url = api_url;
+
+    let firewall = Firewall::new(config);
+    let request = server.join().unwrap();
+    assert!(request.starts_with("GET /api/v1/firewall/settings "));
+    assert!(request.to_lowercase().contains("authorization: bearer strix_test"));
+    assert_eq!(firewall.config.min_age_hours, 72);
+    assert!(!firewall.config.fail_open);
+    let allowed: Vec<&str> = firewall.config.allow["npm"].iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(allowed, ["is-odd", "left-pad"]);
+}
+
+/// Answers one request with `body` and hands back what was asked.
+fn serve_once(body: &'static str) -> (String, JoinHandle<String>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/api/v1", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = [0; 4096];
+        let read = stream.read(&mut request).unwrap();
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(format!("{head}{body}").as_bytes()).unwrap();
+        String::from_utf8_lossy(&request[..read]).into_owned()
+    });
+    (url, server)
 }
